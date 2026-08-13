@@ -1,0 +1,42 @@
+:root {
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1f2937;
+  background: #f4f7fb;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --medical-primary: #0f766e;
+  --medical-primary-soft: #e8f6f3;
+  --medical-primary-dark: #115e59;
+  --medical-ink: #163047;
+  --medical-muted: #64748b;
+  --medical-line: #e5eaf0;
+  --medical-bg: #f4f7fb;
+  --medical-card: #ffffff;
+  --medical-danger: #c2413d;
+  --medical-warning: #b7791f;
+}
+
+* { box-sizing: border-box; }
+html, body, #app { width: 100%; min-width: 1180px; min-height: 100%; margin: 0; }
+body { min-height: 100vh; background: var(--medical-bg); }
+a { color: inherit; text-decoration: none; }
+button, input, textarea { font: inherit; }
+
+.page-shell { min-height: 100vh; }
+.page-container { width: min(1540px, calc(100vw - 56px)); margin: 0 auto; padding: 26px 0 34px; }
+.page-title { margin: 0; font-size: 24px; font-weight: 700; color: var(--medical-ink); letter-spacing: .2px; }
+.page-subtitle { margin-top: 7px; color: var(--medical-muted); font-size: 14px; }
+.card { background: #fff; border: 1px solid var(--medical-line); border-radius: 14px; box-shadow: 0 5px 24px rgba(36, 57, 79, .055); }
+.section-title { font-size: 15px; font-weight: 700; color: var(--medical-ink); }
+.muted { color: var(--medical-muted); }
+
+.el-button--primary { --el-button-bg-color: var(--medical-primary); --el-button-border-color: var(--medical-primary); --el-button-hover-bg-color: #0d8278; --el-button-hover-border-color: #0d8278; }
+.el-tag.el-tag--success { --el-tag-bg-color: #edf9f4; --el-tag-border-color: #c7eadb; --el-tag-text-color: #267a58; }
+.el-table { --el-table-header-bg-color: #f7f9fc; --el-table-row-hover-bg-color: #f0f8f6; color: #334155; }
+.el-table th.el-table__cell { color: #53657a; font-weight: 650; }
+.el-tabs__item.is-active { color: var(--medical-primary); font-weight: 650; }
+.el-tabs__active-bar { background-color: var(--medical-primary); }
+
+@media (max-width: 1280px) {
+  .page-container { width: calc(100vw - 36px); }
+}
