@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     app_port: int = 8000
     log_level: str = "INFO"
 
+    doctor_username: str = "doctor"
+    doctor_password: str = "123456"
+    access_token: str = "medical-rag-doctor-session"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

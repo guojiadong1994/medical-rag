@@ -9,6 +9,7 @@ export interface DoctorProfile {
 
 export interface PatientSummary {
   id: string
+  patientNo: string
   name: string
   gender: '男' | '女'
   age: number
@@ -44,7 +45,6 @@ export interface MedicalEvent {
 }
 
 export interface PatientDetail extends PatientSummary {
-  patientNo: string
   phoneMasked: string
   allergies: string[]
   chronicDiseases: string[]
@@ -68,4 +68,14 @@ export interface ChatMessage {
   content: string
   createdAt: string
   evidences?: EvidenceItem[]
+}
+
+export interface KnowledgeDocument {
+  id: string
+  name: string
+  category: string
+  fileType: string
+  sizeText: string
+  uploadedAt: string
+  status: '已上传'
 }
