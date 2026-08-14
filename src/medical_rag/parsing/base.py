@@ -1,9 +1,7 @@
 from pathlib import Path
 from typing import Protocol
 
-
-class ParsedDocument(dict):
-    pass
+from medical_rag.parsing.models import ParsedDocument
 
 
 class DocumentParser(Protocol):
