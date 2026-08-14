@@ -1,0 +1,78 @@
+<template>
+  <div class="page-grid">
+    <div class="section-row">
+      <div>
+        <h2 style="margin:0;font-size:22px">下午好，{{ healthProfile.name }}</h2>
+        <p class="muted" style="margin:7px 0 0;font-size:13px">以下内容依据已关联医疗机构的最新健康数据整理</p>
+      </div>
+      <el-button type="primary" plain @click="router.push('/user/assistant')">问问 AI 健康助手</el-button>
+    </div>
+
+    <section class="grid-4">
+      <div v-for="item in indicators" :key="item.key" class="metric-card">
+        <div class="label">{{ item.name }}</div>
+        <div class="metric-value"><strong>{{ item.value }}</strong><span>{{ item.unit }}</span></div>
+        <div class="metric-status" :class="`status-${item.level}`">{{ item.status }}</div>
+      </div>
+    </section>
+
+    <section class="grid-2">
+      <div class="panel">
+        <div class="section-row">
+          <div>
+            <h3 class="panel-title">AI 健康摘要</h3>
+            <p class="panel-subtitle">综合近期医疗记录与关键指标</p>
+          </div>
+          <el-tag type="success" effect="plain">更新于今日</el-tag>
+        </div>
+        <div style="line-height:1.9;font-size:14px;color:#34484b">
+          最近数月血压整体呈改善趋势，当前记录为 <strong>132/86 mmHg</strong>。LDL-C 从 2026 年 3 月的 4.20 mmol/L 下降至 8 月的 3.40 mmol/L，下降趋势较明确，但仍建议持续关注血脂控制情况。HbA1c 维持在正常范围，目前未见明显糖代谢异常信号。
+        </div>
+        <div class="tag-row" style="margin-top:16px">
+          <span class="soft-badge">血压较前改善</span>
+          <span class="soft-badge">LDL-C 持续下降</span>
+          <span class="soft-badge">血糖状态稳定</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3 class="panel-title">数据来源</h3>
+        <p class="panel-subtitle">当前已关联的医疗机构</p>
+        <div v-for="hospital in linkedHospitals" :key="hospital.name" style="padding:13px 0;border-bottom:1px solid var(--line)">
+          <div class="section-row">
+            <strong style="font-size:14px">{{ hospital.name }}</strong>
+            <el-tag size="small" type="success">{{ hospital.status }}</el-tag>
+          </div>
+          <div class="muted small" style="margin-top:7px">最近同步：{{ hospital.lastSync }}</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-row">
+        <div>
+          <h3 class="panel-title">最近医疗记录</h3>
+          <p class="panel-subtitle">按时间展示最近同步的诊疗信息</p>
+        </div>
+        <el-button text type="primary" @click="router.push('/user/records')">查看全部</el-button>
+      </div>
+      <div style="display:grid;gap:11px">
+        <div v-for="record in medicalRecords.slice(0, 4)" :key="record.id" class="record-card">
+          <div class="record-date">{{ record.date }}</div>
+          <div class="record-main">
+            <h3>{{ record.title }}</h3>
+            <p>{{ record.hospital }}<span v-if="record.department"> · {{ record.department }}</span></p>
+            <p>{{ record.summary }}</p>
+          </div>
+          <el-tag effect="plain">{{ record.type }}</el-tag>
+        </div>
+      </div>
+    </section>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { useRouter } from 'vue-router'
+import { healthProfile, indicators, linkedHospitals, medicalRecords } from '@/data/health'
+const router = useRouter()
+</script>
