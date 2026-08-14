@@ -18,11 +18,26 @@ class TextBlock(BaseModel):
     source: Literal["text_layer", "ocr"] = "text_layer"
 
 
+class TableBlock(BaseModel):
+    page: int
+    table_no: int
+    bbox: tuple[float, float, float, float]
+    title: str | None = None
+    headers: list[str] = Field(default_factory=list)
+    rows: list[list[str]] = Field(default_factory=list)
+    markdown: str = ""
+    search_text: str = ""
+    source: Literal["text_layer", "ocr"] = "text_layer"
+
+
 class ParsedPage(BaseModel):
     page: int
     width: float
     height: float
     blocks: list[TextBlock] = Field(default_factory=list)
+    tables: list[TableBlock] = Field(default_factory=list)
+    raw_block_count: int = 0
+    table_text_block_count: int = 0
     raw_char_count: int = 0
     text_layer_ok: bool = True
 
@@ -45,6 +60,7 @@ class CleanedPage(BaseModel):
     width: float
     height: float
     blocks: list[TextBlock] = Field(default_factory=list)
+    tables: list[TableBlock] = Field(default_factory=list)
     text: str = ""
 
 
