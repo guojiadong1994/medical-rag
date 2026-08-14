@@ -1,15 +1,14 @@
 # Scripts
 
-项目命令行脚本统一放这里。
+当前可用脚本：
 
-当前可用：
+- `parse_pdf.py`：PDF 文本层 + 表格 V1 解析与清洗
+- `chunk_document.py`：对 `cleaned_document.json` 执行 Structure-Aware Chunking V1
 
-- `parse_pdf.py`：解析并清洗 born-digital PDF，同时抽取表格结构。
+后续脚本统一放这里：
 
-后续规划：
-
-- `generate_synthea_dataset.py`
-- `render_medical_reports.py`
-- `ingest_documents.py`
-- `build_eval_dataset.py`
-- `reindex.py`
+- generate_synthea_dataset.py
+- render_medical_reports.py
+- ingest_documents.py
+- build_eval_dataset.py
+- reindex.py
