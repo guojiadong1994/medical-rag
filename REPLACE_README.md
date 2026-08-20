@@ -1,39 +1,46 @@
-# Medical RAG V1.0.1 完整替换说明
+# 完整项目恢复说明
 
-这是 V1.0 成品冲刺版的启动修复完整包，修复 `python run.py` 的 Circular Import（循环导入）错误。
+这不是只包含后端或临时演示页面的包。
 
-## 替换
+本包包含：
 
-请继续采用完整目录替换方式：
+- 原有 `apps/web/` 智护医疗完整前端；
+- 当前最新 `src/` 医疗 RAG 后端；
+- `scripts/`、`doc/`、`tests/`；
+- `deployment/`、`migrations/`；
+- 根目录配置与启动文件。
 
-```text
-src/
-scripts/
-doc/
-tests/
-pyproject.toml
-README.md
-run.py
-.env.example
-Dockerfile.rag-v1
-docker-compose.rag-v1.yml
-Makefile.v1
+## 最安全的恢复方法
+
+不要把旧项目整个删除，因为你的本地 `.env`、`data/processed/`、Milvus 数据库和 `.git/` 不在源码包里。
+
+### 方法 A：推荐
+
+把这个完整包解压到任意临时目录，然后在解压后的项目根目录运行：
+
+```bash
+bash SAFE_RESTORE_TO_EXISTING_PROJECT.sh "/你的/medical-rag/原项目路径"
 ```
 
-## 不要删除/覆盖自己的运行数据
+它会：
 
-保留：
+- 恢复/覆盖 `apps/`、`src/`、`scripts/`、`doc/`、`tests/`、`deployment/`、`migrations/`；
+- 恢复根目录源码配置；
+- **不会删除或覆盖**目标项目中的 `.git/`、`.env` 和已有 `data/`。
+
+### 方法 B：新建完整项目副本
+
+解压本包后，把旧项目中的：
 
 ```text
-data/
 .env
 .git/
-apps/
-deployment/
-migrations/
+data/
 ```
 
-## 替换后验证
+复制进新目录，再运行安装与启动命令。
+
+## 验证
 
 ```bash
 pip install -e ".[product,dev]"
@@ -42,15 +49,16 @@ python scripts/preflight_v1.py
 python run.py
 ```
 
-启动前检查应新增：
+另开终端：
 
-```text
-api_importable: true
-api_import_error: null
+```bash
+cd apps/web
+npm install
+npm run dev
 ```
 
-然后浏览器访问：
+访问：
 
 ```text
-http://127.0.0.1:8000/rag-demo
+http://127.0.0.1:5173
 ```
