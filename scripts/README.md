@@ -1,14 +1,10 @@
 # Scripts
 
-当前可用脚本：
+当前可直接运行的离线脚本：
 
-- `parse_pdf.py`：PDF 文本层 + 表格 V1 解析与清洗
-- `chunk_document.py`：对 `cleaned_document.json` 执行 Structure-Aware Chunking V1
+- `parse_pdf.py`：PDF 文本/表格解析与清洗。
+- `chunk_document.py`：结构感知 Chunking。
+- `embed_chunks.py`：为 `chunks.json` 生成归一化 Dense Embedding。
+- `search_dense_local.py`：在接入 Milvus 前，用 NumPy 做本地 Top-K Dense Retrieval 验证。
 
-后续脚本统一放这里：
-
-- generate_synthea_dataset.py
-- render_medical_reports.py
-- ingest_documents.py
-- build_eval_dataset.py
-- reindex.py
+更详细的阶段说明统一放在项目根目录 `doc/`。

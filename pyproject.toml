@@ -18,6 +18,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+embedding = [
+    "numpy>=1.26,<3.0",
+    "sentence-transformers>=5.1,<7.0",
+]
 dev = [
     "pytest>=8.4,<9.0",
     "pytest-asyncio>=1.1,<2.0",
