@@ -67,3 +67,16 @@ python scripts/build_rag_context.py data/processed/hypertension_2024/chunks.json
   --context-top-k 5 \
   --max-context-chars 6000
 ```
+
+## LLM Generation V1
+
+`generate_rag_answer.py` runs the complete stable offline knowledge path:
+Dense + BM25 -> RRF -> Cross-Encoder Reranker -> bounded Context -> OpenAI-compatible LLM -> citation validation.
+
+The script reads LLM settings from CLI flags or these environment variables:
+
+- `MEDICAL_RAG_LLM_BASE_URL`
+- `MEDICAL_RAG_LLM_MODEL`
+- `MEDICAL_RAG_LLM_API_KEY`
+
+The API key is only used in the HTTP Authorization header and is never written to generation artifacts.
