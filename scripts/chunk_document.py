@@ -80,6 +80,7 @@ def run(
     lengths = [chunk.char_count for chunk in chunked.chunks]
     sections = sorted({chunk.section for chunk in chunked.chunks if chunk.section})
 
+    sectioned_narrative = [chunk for chunk in narrative if chunk.section]
     report = {
         "document_id": chunked.document_id,
         "source_file": chunked.source_file,
@@ -87,9 +88,17 @@ def run(
         "narrative_chunk_count": len(narrative),
         "table_chunk_count": len(tables),
         "section_count": len(sections),
+        "sectioned_narrative_count": len(sectioned_narrative),
+        "unsectioned_narrative_count": len(narrative) - len(sectioned_narrative),
+        "sectioned_narrative_ratio": (
+            round(len(sectioned_narrative) / len(narrative), 4) if narrative else 0.0
+        ),
         "min_chunk_chars": min(lengths) if lengths else 0,
         "avg_chunk_chars": round(mean(lengths), 2) if lengths else 0,
         "max_chunk_chars": max(lengths) if lengths else 0,
+        "short_chunk_count": sum(1 for length in lengths if length < min_chars),
+        "over_target_chunk_count": sum(1 for length in lengths if length > target_chars),
+        "over_max_chunk_count": sum(1 for length in lengths if length > max_chars),
         "cross_page_chunk_count": sum(
             1 for chunk in narrative if chunk.page_start != chunk.page_end
         ),

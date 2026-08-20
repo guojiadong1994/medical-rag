@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from medical_rag.chunking.models import ChunkedDocument, DocumentChunk
+from medical_rag.chunking.paragraph_assembler import ParagraphAssembler
 from medical_rag.chunking.section_detector import SectionDetector
 from medical_rag.parsing.models import CleanedDocument, TableBlock, TextBlock
 
@@ -35,12 +36,14 @@ class _SectionState:
 
 
 class StructureAwareChunker:
-    """Structure-aware V1 chunker for cleaned medical documents.
+    """Structure-aware V1.1 chunker for cleaned medical documents.
 
     Strategy:
+    - rebuild paragraph-like units from PDF visual-line blocks;
     - keep section hierarchy as metadata;
-    - prefer block/paragraph boundaries;
-    - split oversized paragraphs by sentence boundaries;
+    - use target size as a soft boundary and max size as the hard boundary;
+    - split oversized paragraphs by sentence boundaries before any hard split;
+    - build overlap from complete semantic tails instead of raw character slicing;
     - allow chunks to cross page boundaries while preserving page_start/page_end;
     - keep each ordinary table as an independent table chunk;
     - provide an ``embedding_text`` field with section context prepended.
@@ -67,6 +70,7 @@ class StructureAwareChunker:
         self.min_chars = min_chars
         self.overlap_chars = overlap_chars
         self.section_detector = SectionDetector()
+        self.paragraph_assembler = ParagraphAssembler()
 
     def chunk(self, document: CleanedDocument) -> ChunkedDocument:
         document_id = self._document_id(document)
@@ -96,7 +100,11 @@ class StructureAwareChunker:
             buffer = []
 
         for page in document.pages:
-            elements = self._page_elements(page.blocks, page.tables)
+            elements = self._semantic_page_elements(
+                page.blocks,
+                page.tables,
+                page.width,
+            )
             page_table_titles = {
                 self._caption_key(table.title)
                 for table in page.tables
@@ -130,6 +138,30 @@ class StructureAwareChunker:
                 if self._is_duplicate_table_caption(text, page_table_titles):
                     continue
 
+                # Recover an occasional extraction artifact such as:
+                # ``……非随机对照研究1 我国人群高血压流行及防控现状``.
+                embedded = self.section_detector.detect_trailing_embedded(block)
+                if embedded is not None:
+                    current_path = state.path
+                    current_section = state.current
+                    if buffer and (
+                        current_section != buffer_section or current_path != buffer_path
+                    ):
+                        flush_buffer()
+                    buffer_section = current_section
+                    buffer_path = current_path
+                    for piece in self._split_oversized_text(embedded.prefix):
+                        buffer.append(_Segment(text=piece, page=page.page))
+                    flush_buffer()
+
+                    state.update(embedded.heading.level, embedded.heading.title)
+                    buffer_section = state.current
+                    buffer_path = state.path
+                    if embedded.heading.body:
+                        for piece in self._split_oversized_text(embedded.heading.body):
+                            buffer.append(_Segment(text=piece, page=page.page))
+                    continue
+
                 heading = self.section_detector.detect(block)
                 if heading is not None:
                     flush_buffer()
@@ -137,12 +169,15 @@ class StructureAwareChunker:
                     buffer_section = state.current
                     buffer_path = state.path
                     if heading.body:
-                        buffer.append(_Segment(text=heading.body, page=page.page))
+                        for piece in self._split_oversized_text(heading.body):
+                            buffer.append(_Segment(text=piece, page=page.page))
                     continue
 
                 current_path = state.path
                 current_section = state.current
-                if buffer and (current_section != buffer_section or current_path != buffer_path):
+                if buffer and (
+                    current_section != buffer_section or current_path != buffer_path
+                ):
                     flush_buffer()
 
                 buffer_section = current_section
@@ -168,12 +203,43 @@ class StructureAwareChunker:
             chunks=chunks,
         )
 
+    def _semantic_page_elements(
+        self,
+        blocks: list[TextBlock],
+        tables: list[TableBlock],
+        page_width: float,
+    ) -> list[tuple[str, TextBlock | TableBlock]]:
+        """Interleave tables and paragraph-like narrative units in reading order."""
+
+        raw = self._page_elements(blocks, tables)
+        result: list[tuple[str, TextBlock | TableBlock]] = []
+        text_run: list[TextBlock] = []
+
+        def flush_text_run() -> None:
+            nonlocal text_run
+            if not text_run:
+                return
+            for paragraph in self.paragraph_assembler.assemble(text_run, page_width):
+                result.append(("text", paragraph))
+            text_run = []
+
+        for kind, item in raw:
+            if kind == "table":
+                flush_text_run()
+                result.append((kind, item))
+            else:
+                assert isinstance(item, TextBlock)
+                text_run.append(item)
+        flush_text_run()
+        return result
+
     def _page_elements(
         self,
         blocks: list[TextBlock],
         tables: list[TableBlock],
     ) -> list[tuple[str, TextBlock | TableBlock]]:
         """Merge narrative blocks and tables into an approximate page reading order."""
+
         ordered_blocks = sorted(blocks, key=lambda block: block.reading_order)
         elements: list[tuple[str, TextBlock | TableBlock]] = [
             ("text", block) for block in ordered_blocks
@@ -184,7 +250,6 @@ class StructureAwareChunker:
             for idx, (_, element) in enumerate(elements):
                 if not isinstance(element, TextBlock):
                     continue
-                # A table is normally consumed after the nearest text block above it.
                 if element.bbox[1] > table.bbox[1]:
                     insert_at = idx
                     break
@@ -204,6 +269,8 @@ class StructureAwareChunker:
             separator = 2 if current else 0
             projected = current_len + separator + length
 
+            # target_chars is deliberately soft: only flush at a semantic segment
+            # boundary. max_chars remains the hard bound.
             should_flush = bool(
                 current
                 and (
@@ -234,6 +301,8 @@ class StructureAwareChunker:
         return groups
 
     def _overlap_tail(self, segments: list[_Segment]) -> list[_Segment]:
+        """Build overlap from complete paragraphs/sentences, never raw character tails."""
+
         if self.overlap_chars <= 0 or not segments:
             return []
 
@@ -245,48 +314,107 @@ class StructureAwareChunker:
             text = segment.text.strip()
             if not text:
                 continue
+
             if len(text) <= remaining:
                 selected.append(_Segment(text=text, page=segment.page))
                 remaining -= len(text)
-            else:
-                selected.append(_Segment(text=text[-remaining:], page=segment.page))
-                remaining = 0
+                continue
+
+            tail = self._semantic_tail(text, remaining)
+            if tail:
+                selected.append(_Segment(text=tail, page=segment.page))
+                remaining -= len(tail)
+            break
+
         selected.reverse()
         return selected
 
-    def _split_oversized_text(self, text: str) -> list[str]:
-        text = text.strip()
-        if len(text) <= self.max_chars:
-            return [text]
+    def _semantic_tail(self, text: str, budget: int) -> str:
+        if budget <= 0:
+            return ""
+        units = self._sentence_units(text)
+        if not units:
+            return ""
 
-        sentences = [item.strip() for item in self._SENTENCE_SPLIT_RE.split(text) if item.strip()]
+        selected: list[str] = []
+        used = 0
+        for unit in reversed(units):
+            length = len(unit)
+            if length + used <= budget:
+                selected.append(unit)
+                used += length
+                continue
+            break
+
+        selected.reverse()
+        return self._concat_units(selected).strip()
+
+    def _split_oversized_text(self, text: str) -> list[str]:
+        text = self._normalize_text(text)
+        if len(text) <= self.max_chars:
+            return [text] if text else []
+
+        sentences = self._sentence_units(text)
         if len(sentences) <= 1:
             return self._hard_split(text)
 
         pieces: list[str] = []
-        current = ""
+        current: list[str] = []
+        current_len = 0
         for sentence in sentences:
-            candidate = sentence if not current else current + sentence
-            if len(candidate) <= self.max_chars:
-                current = candidate
-                continue
-            if current:
-                pieces.append(current)
+            separator = self._unit_separator(current[-1] if current else "", sentence)
+            projected = current_len + len(separator) + len(sentence)
+            if current and projected > self.max_chars:
+                pieces.append(self._concat_units(current).strip())
+                current = []
+                current_len = 0
+
             if len(sentence) <= self.max_chars:
-                current = sentence
+                if current:
+                    current_len += len(self._unit_separator(current[-1], sentence))
+                current.append(sentence)
+                current_len += len(sentence)
             else:
                 hard = self._hard_split(sentence)
-                pieces.extend(hard[:-1])
-                current = hard[-1]
+                if current:
+                    pieces.append(self._concat_units(current).strip())
+                    current = []
+                    current_len = 0
+                pieces.extend(hard)
+
         if current:
-            pieces.append(current)
-        return pieces
+            pieces.append(self._concat_units(current).strip())
+        return [piece for piece in pieces if piece]
 
     def _hard_split(self, text: str) -> list[str]:
+        """Last-resort split for a single extremely long sentence.
+
+        Prefer a comma/colon/whitespace near the hard limit instead of blindly cutting a
+        medical term or numeric expression in the middle.
+        """
+
+        text = text.strip()
         if len(text) <= self.max_chars:
             return [text]
-        step = max(1, self.max_chars - self.overlap_chars)
-        return [text[start : start + self.max_chars] for start in range(0, len(text), step)]
+
+        pieces: list[str] = []
+        remaining = text
+        while len(remaining) > self.max_chars:
+            lower = max(int(self.max_chars * 0.65), 1)
+            window = remaining[lower : self.max_chars + 1]
+            cut = -1
+            for token in ("，", ",", "、", "：", ":", " "):
+                pos = window.rfind(token)
+                if pos >= 0:
+                    cut = max(cut, lower + pos + 1)
+            if cut <= 0:
+                cut = self.max_chars
+            pieces.append(remaining[:cut].strip())
+            remaining = remaining[cut:].strip()
+
+        if remaining:
+            pieces.append(remaining)
+        return pieces
 
     def _narrative_chunk(
         self,
@@ -375,8 +503,6 @@ class StructureAwareChunker:
             return False
         if previous.endswith(("。", "！", "？", "!", "?", "；", ";")):
             return False
-        # A page break is a physical boundary, not a semantic one. If the previous page
-        # ends mid-sentence, continue directly on the next page.
         return True
 
     @staticmethod
@@ -388,6 +514,36 @@ class StructureAwareChunker:
         if left.isascii() and right.isascii() and left.isalnum() and right.isalnum():
             return previous + " " + current
         return previous + current
+
+    @classmethod
+    def _sentence_units(cls, text: str) -> list[str]:
+        return [item.strip() for item in cls._SENTENCE_SPLIT_RE.split(text) if item.strip()]
+
+    @classmethod
+    def _concat_units(cls, units: list[str]) -> str:
+        if not units:
+            return ""
+        result = units[0]
+        for unit in units[1:]:
+            result += cls._unit_separator(result, unit) + unit
+        return result
+
+    @staticmethod
+    def _unit_separator(previous: str, current: str) -> str:
+        if not previous or not current:
+            return ""
+        left = previous[-1]
+        right = current[0]
+        if left.isascii() and right.isascii() and left.isalnum() and right.isalnum():
+            return " "
+        return ""
+
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        text = text.replace("\r", "\n")
+        text = re.sub(r"[\t\u3000]+", " ", text)
+        text = re.sub(r" {2,}", " ", text)
+        return text.strip()
 
     @staticmethod
     def _embedding_text(section_path: list[str], text: str) -> str:
