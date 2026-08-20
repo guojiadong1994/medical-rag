@@ -80,3 +80,19 @@ The script reads LLM settings from CLI flags or these environment variables:
 - `MEDICAL_RAG_LLM_API_KEY`
 
 The API key is only used in the HTTP Authorization header and is never written to generation artifacts.
+
+## Answer grounding / end-to-end generation evaluation
+
+```bash
+python scripts/judge_rag_answer.py \
+  data/processed/hypertension_2024/rag/rag_generation_v1.json \
+  --case-id grade2_bp
+
+python scripts/evaluate_generation_e2e.py \
+  data/processed/hypertension_2024/chunks.json \
+  --eval-file doc/evaluation/hypertension_2024_retrieval_eval_v2.json \
+  --context-top-k 5 \
+  --max-context-chars 6000 \
+  --candidate-k 50 \
+  --rerank-k 20
+```

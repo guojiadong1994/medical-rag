@@ -1,54 +1,74 @@
-# medical-rag — LLM Generation V1 完整替换包
+# Medical RAG — Answer Grounding & Generation Evaluation V1 完整替换包
 
-这是基于 Context Builder V1 的完整替换包，保留已有 `src/`、`scripts/`、`doc/`、`tests/` 和 `pyproject.toml`，并新增 LLM Generation V1。
+本包以 **LLM Generation V1 完整包**为基线继续开发，保留此前 `src/`、`scripts/`、`doc/`、`tests/`、`pyproject.toml` 的全部文件。
 
-## 替换
+## 替换方式
 
-把压缩包中的这些内容整体覆盖项目根目录同名内容：
+将本包中的以下目录/文件整体覆盖到项目根目录：
 
-- `src/`
-- `scripts/`
-- `doc/`
-- `tests/`
-- `pyproject.toml`
+```text
+src/
+scripts/
+doc/
+tests/
+pyproject.toml
+```
 
-不要删除或覆盖你的：
+不要删除/覆盖你项目中的：
 
-- `data/`
-- `.env`
-- `.git/`
+```text
+data/
+.env
+.git/
+```
 
-## 测试
+## 本阶段新增
+
+- Claim → cited evidence 语义支持判断
+- expected_facts 覆盖率
+- answer correctness
+- faithfulness score
+- fully grounded rate
+- strict overall pass
+- 单题已有生成结果审计
+- 14 道端到端 Generation Evaluation
+- 每题 checkpoint，避免 API 中途失败导致结果全部丢失
+
+## 第一步：测试
 
 ```bash
 pytest -q
 ```
 
-## 配置 LLM
+## 第二步：先审计你刚才已经生成成功的 2 级高血压答案
 
 ```bash
-export MEDICAL_RAG_LLM_BASE_URL="<openai-compatible-base-url>/v1"
-export MEDICAL_RAG_LLM_MODEL="<model-name>"
-export MEDICAL_RAG_LLM_API_KEY="<api-key>"
+python scripts/judge_rag_answer.py \
+  data/processed/hypertension_2024/rag/rag_generation_v1.json \
+  --case-id grade2_bp
 ```
 
-本地无鉴权模型服务可以不设置 `MEDICAL_RAG_LLM_API_KEY`。
+如果没有单独配置 Judge，程序会回退使用你现有的 `MEDICAL_RAG_LLM_*`。
 
-## 运行
+## 第三步：跑完整 14 道端到端评测
 
 ```bash
-python scripts/generate_rag_answer.py \
+python scripts/evaluate_generation_e2e.py \
   data/processed/hypertension_2024/chunks.json \
-  --query "2级高血压的收缩压和舒张压范围是多少？" \
+  --eval-file doc/evaluation/hypertension_2024_retrieval_eval_v2.json \
   --context-top-k 5 \
-  --max-context-chars 6000
+  --max-context-chars 6000 \
+  --candidate-k 50 \
+  --rerank-k 20
 ```
 
-产物位于：
+输出：
 
 ```text
-data/processed/hypertension_2024/rag/
-  rag_generation_v1.json
-  rag_answer_v1.md
-  rag_generation_trace_v1.md
+data/processed/hypertension_2024/evaluation/
+├── generation_e2e_checkpoint_v1.json
+├── generation_e2e_eval_v1.json
+└── generation_e2e_eval_v1.md
 ```
+
+详细原理见：`doc/ANSWER_GROUNDING_EVAL_V1.md`。

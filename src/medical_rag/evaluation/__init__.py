@@ -3,6 +3,22 @@ from medical_rag.evaluation.diagnostics import (
     RecallDiagnosis,
     diagnose_recall,
 )
+from medical_rag.evaluation.generation import (
+    EvidenceGroundingJudge,
+    build_generation_eval_report,
+    case_overall_passed,
+    compute_semantic_metrics,
+    generation_report_markdown,
+)
+from medical_rag.evaluation.generation_models import (
+    ClaimGroundingJudgment,
+    ExpectedFactJudgment,
+    GenerationEvalCaseResult,
+    GenerationEvalReport,
+    GroundingEvaluationResult,
+    SemanticGroundingJudgment,
+    SemanticGroundingMetrics,
+)
 from medical_rag.evaluation.models import (
     EvidenceRule,
     KeywordProximityRule,
@@ -40,4 +56,16 @@ __all__ = [
     "MethodEvidenceRank",
     "RecallDiagnosis",
     "diagnose_recall",
+    "ClaimGroundingJudgment",
+    "ExpectedFactJudgment",
+    "SemanticGroundingJudgment",
+    "SemanticGroundingMetrics",
+    "GroundingEvaluationResult",
+    "GenerationEvalCaseResult",
+    "GenerationEvalReport",
+    "EvidenceGroundingJudge",
+    "compute_semantic_metrics",
+    "case_overall_passed",
+    "build_generation_eval_report",
+    "generation_report_markdown",
 ]
