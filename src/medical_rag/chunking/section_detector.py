@@ -22,21 +22,40 @@ class EmbeddedHeadingMatch:
 class SectionDetector:
     """Conservative heading detector for Chinese medical guidelines.
 
-    V1.1 extends the original detector in two directions:
-    - short plain-integer headings (``1 我国人群高血压流行及防控现状``) no longer
-      require bold metadata when the text shape itself strongly resembles a title;
-    - a trailing heading accidentally glued to preceding PDF text can be recovered,
-      e.g. ``……非随机对照研究1 我国人群高血压流行及防控现状``.
+    V1.2 intentionally prefers *missing* a weak heading over inventing a wrong one.
+    Wrong headings are especially harmful in RAG because section text is prepended to
+    ``embedding_text`` and therefore changes retrieval semantics.
+
+    Main rules:
+    - dotted headings (``4.5`` / ``4.5.1``) are strong evidence;
+    - plain integer headings (``1 我国人群...``) need bold metadata or a strongly
+      title-shaped Chinese phrase;
+    - numeric thresholds / percentiles / ratios are rejected as headings;
+    - table-like labels such as ``1 推荐类别`` are rejected unless typography is strong;
+    - glued trailing headings are recovered only when evidence is strong enough.
     """
 
     _NUMBERED_RE = re.compile(r"^(?P<number>\d+(?:\.\d+){0,4})\s+(?P<rest>\S.*)$")
     _CHAPTER_RE = re.compile(r"^(第[一二三四五六七八九十百0-9]+[章节篇部])\s*(.*)$")
     _KEYPOINT_RE = re.compile(r"^(要点\s*\d+)\s*(.*)$")
-    _TRAILING_NUMBERED_RE = re.compile(
+    _TRAILING_DOTTED_RE = re.compile(
         r"(?P<prefix>.+?)(?<![\d.])"
-        r"(?P<number>\d+(?:\.\d+){0,4})\s+"
-        r"(?P<title>[\u4e00-\u9fffA-Za-z][^。！？!?；;]{2,60})$"
+        r"(?P<number>\d+(?:\.\d+){1,4})\s+"
+        r"(?P<title>[\u4e00-\u9fffA-Za-z][^。！？!?；;]{2,50})$"
     )
+    _TRAILING_PLAIN_RE = re.compile(
+        r"(?P<prefix>.+?[。！？；;])\s*"
+        r"(?P<number>\d{1,2})\s+"
+        r"(?P<title>[\u4e00-\u9fff][^。！？!?；;,，]{7,35})$"
+    )
+    _TABLE_LIKE_TITLES = {
+        "推荐类别",
+        "证据等级",
+        "级别定义",
+        "推荐类别定义建议使用的表述",
+        "分类",
+        "测量方式",
+    }
 
     def __init__(self, *, max_title_chars: int = 60) -> None:
         self.max_title_chars = max_title_chars
@@ -55,9 +74,6 @@ class SectionDetector:
         keypoint = self._KEYPOINT_RE.match(text)
         if keypoint:
             suffix = keypoint.group(2).strip()
-            if len(text) <= self.max_title_chars * 2 and not self._looks_like_long_body(suffix):
-                title = keypoint.group(1) + (f" {suffix}" if suffix else "")
-                return HeadingMatch(level=2, title=title)
             for delimiter in ("·", "•"):
                 if delimiter in suffix:
                     title_part, body = suffix.split(delimiter, 1)
@@ -68,39 +84,50 @@ class SectionDetector:
                             title=f"{keypoint.group(1)} {title_part}",
                             body=(delimiter + body).strip(),
                         )
+            if len(text) <= self.max_title_chars * 2 and not self._looks_like_long_body(suffix):
+                title, body = self._split_title_and_body(suffix)
+                if title:
+                    return HeadingMatch(
+                        level=2,
+                        title=keypoint.group(1) + (f" {title}" if title else ""),
+                        body=body,
+                    )
 
         return self._detect_numbered(text, block)
 
     def detect_trailing_embedded(self, block: TextBlock) -> EmbeddedHeadingMatch | None:
-        """Recover a heading that was glued to the end of a preceding PDF block.
+        """Recover a heading accidentally glued to preceding body text.
 
-        The rule is intentionally strict for plain integers: the prefix must be non-trivial
-        and the trailing title must be long enough to avoid treating short table labels such
-        as ``1 推荐类别`` as document sections.
+        V1.2 is deliberately stricter than V1.1. Dotted section numbers are accepted
+        because they are strong structural evidence. Plain integers are accepted only
+        after a real sentence boundary, which avoids turning numeric body fragments into
+        hundreds of fake sections.
         """
 
         text = self._normalize(block.text)
         if len(text) < 16:
             return None
 
-        match = self._TRAILING_NUMBERED_RE.search(text)
-        if not match:
+        match = self._TRAILING_DOTTED_RE.search(text)
+        force_plain = False
+        if match is None:
+            match = self._TRAILING_PLAIN_RE.search(text)
+            force_plain = True
+        if match is None:
             return None
 
         prefix = match.group("prefix").strip()
         number = match.group("number")
         title = match.group("title").strip()
-        if len(prefix) < 10:
-            return None
-
-        dotted = "." in number
-        if not dotted and len(title) < 6:
-            return None
-        if not self._title_shape_ok(title):
+        if len(prefix) < 8 or not self._title_shape_ok(title):
             return None
 
         synthetic = block.model_copy(update={"text": f"{number} {title}"})
-        heading = self._detect_numbered(f"{number} {title}", synthetic, force_plain=True)
+        heading = self._detect_numbered(
+            f"{number} {title}",
+            synthetic,
+            force_plain=force_plain,
+        )
         if heading is None:
             return None
         return EmbeddedHeadingMatch(prefix=prefix, heading=heading)
@@ -119,40 +146,75 @@ class SectionDetector:
         number = match.group("number")
         rest = match.group("rest").strip()
         level = number.count(".") + 1
-        strong_number = "." in number
+        dotted = "." in number
 
-        plain_title_evidence = (
-            force_plain
-            or block.is_bold
-            or (
-                self._plain_integer_number_ok(number)
-                and len(rest) <= min(self.max_title_chars, 36)
-                and self._plain_integer_title_ok(rest)
-                and not self._looks_like_sentence(rest)
-            )
-        )
-        if not strong_number and not plain_title_evidence:
+        if self._looks_like_numeric_body(rest):
             return None
 
-        if len(rest) <= self.max_title_chars and not self._looks_like_sentence(rest):
-            return HeadingMatch(level=level, title=f"{number} {rest}")
+        # Dotted numbering is strong structural evidence. PDF extraction frequently
+        # glues the first body sentence after a short title, e.g.
+        # ``4.5.1 按血压水平分类和分级 目前,我国采用正常...``.
+        if dotted:
+            title, body = self._split_title_and_body(rest)
+            if title and self._title_shape_ok(title):
+                return HeadingMatch(level=level, title=f"{number} {title}", body=body)
+            return None
 
-        # Common PDF artifact: ``4.2 体格检查 仔细的体格检查有助于……``.
-        # Chinese section titles normally have no internal spaces, so the first token
-        # is a useful conservative boundary and the remainder is retained as body text.
+        if not self._plain_integer_number_ok(number):
+            return None
+
+        title, body = self._split_title_and_body(rest)
+        if not title or not self._plain_integer_title_ok(title):
+            return None
+
+        strong_typography = block.is_bold
+        strong_text_shape = (
+            len(title) >= 7
+            and len(title) <= 32
+            and self._mostly_cjk(title, minimum_ratio=0.72)
+            and not body
+        )
+        if not (force_plain or strong_typography or strong_text_shape):
+            return None
+
+        # Short table labels are common false positives in medical PDFs.
+        if title in self._TABLE_LIKE_TITLES and not strong_typography:
+            return None
+
+        # Non-bold plain-integer headings with an attached body are too ambiguous.
+        if body and not (strong_typography or force_plain):
+            return None
+
+        return HeadingMatch(level=1, title=f"{number} {title}", body=body)
+
+    def _split_title_and_body(self, rest: str) -> tuple[str, str]:
+        rest = rest.strip()
+        if not rest:
+            return "", ""
+
+        # If there is exactly the normal Chinese section-title token followed by body,
+        # take the first token as title. This fixes titles such as
+        # ``4.5.1 按血压水平分类和分级 目前,我国采用正常...``.
+        if " " in rest:
+            first, remainder = rest.split(" ", 1)
+            first = first.strip()
+            remainder = remainder.strip()
+            if (
+                2 <= len(first) <= 30
+                and self._title_shape_ok(first)
+                and remainder
+                and self._looks_body_like(remainder)
+            ):
+                return first, remainder
+
+        if len(rest) <= self.max_title_chars and self._title_shape_ok(rest):
+            return rest, ""
+
+        # Fall back to a first-token boundary for long extraction artifacts.
         first, sep, remainder = rest.partition(" ")
-        if (
-            sep
-            and 2 <= len(first) <= 30
-            and self._mostly_cjk_or_medical(first)
-            and remainder.strip()
-        ):
-            return HeadingMatch(
-                level=level,
-                title=f"{number} {first}",
-                body=remainder.strip(),
-            )
-        return None
+        if sep and 2 <= len(first) <= 30 and self._title_shape_ok(first):
+            return first, remainder.strip()
+        return "", ""
 
     @staticmethod
     def _normalize(text: str) -> str:
@@ -168,27 +230,42 @@ class SectionDetector:
     def _looks_like_long_body(text: str) -> bool:
         return len(text) > 90 or bool(re.search(r"[。！？；;].{8,}", text))
 
+    @classmethod
+    def _looks_body_like(cls, text: str) -> bool:
+        if len(text) >= 18:
+            return True
+        return bool(re.search(r"[,，:：。！？；;()（）\[\]<>≥≤=%/]", text))
+
     @staticmethod
     def _plain_integer_number_ok(number: str) -> bool:
-        if "." in number:
-            return True
         try:
             value = int(number)
         except ValueError:
             return False
-        # Medical guideline top-level sections are normally small integers.
-        # This rejects percentile/value fragments such as ``95 定义为高血压...``.
         return 1 <= value <= 30
 
     @classmethod
     def _plain_integer_title_ok(cls, text: str) -> bool:
         if not cls._title_shape_ok(text):
             return False
-        # Numeric thresholds / ratios are strong evidence that this is body text,
-        # not a plain top-level heading.
-        if re.search(r"[<>≥≤=%/]|P\d|\d[~～-]\d", text, re.IGNORECASE):
+        if cls._looks_like_numeric_body(text):
+            return False
+        if text.count(",") + text.count("，"):
             return False
         return True
+
+    @staticmethod
+    def _looks_like_numeric_body(text: str) -> bool:
+        return bool(
+            re.search(
+                r"[<>≥≤=%/]"
+                r"|\bP\s*\d"
+                r"|\d\s*[~～-]\s*\d"
+                r"|\d+\s*mmHg",
+                text,
+                re.IGNORECASE,
+            )
+        )
 
     @classmethod
     def _title_shape_ok(cls, text: str) -> bool:
@@ -200,6 +277,13 @@ class SectionDetector:
         if text.count(",") + text.count("，") >= 2:
             return False
         return cls._mostly_cjk_or_medical(text)
+
+    @staticmethod
+    def _mostly_cjk(text: str, *, minimum_ratio: float) -> bool:
+        if not text:
+            return False
+        cjk = sum("\u4e00" <= ch <= "\u9fff" for ch in text)
+        return cjk / len(text) >= minimum_ratio
 
     @staticmethod
     def _mostly_cjk_or_medical(text: str) -> bool:

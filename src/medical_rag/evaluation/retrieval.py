@@ -93,6 +93,8 @@ class DenseRetrievalEvaluator:
                         page_end=hit.page_end,
                         section=hit.section,
                         content_type=hit.content_type,
+                        table_title=hit.table_title,
+                        text_preview=hit.text[:360].replace("\n", " "),
                         relevant=relevant,
                     )
                 )

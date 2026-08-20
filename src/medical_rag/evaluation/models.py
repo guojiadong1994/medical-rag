@@ -38,6 +38,8 @@ class RetrievalEvalHit(BaseModel):
     page_end: int
     section: str | None = None
     content_type: str
+    table_title: str | None = None
+    text_preview: str = ""
     relevant: bool
 
 

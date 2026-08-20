@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 from medical_rag.embedding import SentenceTransformerEmbedder
@@ -13,6 +14,13 @@ from medical_rag.retrieval import LocalDenseIndex
 def _load_suite(path: Path) -> RetrievalEvalSuite:
     payload = json.loads(path.read_text(encoding="utf-8"))
     return RetrievalEvalSuite.model_validate(payload)
+
+
+def _safe_tag(tag: str | None) -> str:
+    if not tag:
+        return ""
+    value = re.sub(r"[^0-9A-Za-z._-]+", "_", tag).strip("_")
+    return f"_{value}" if value else ""
 
 
 def _render_markdown(report: object) -> str:
@@ -51,8 +59,10 @@ def _render_markdown(report: object) -> str:
                 section = hit.section or "—"
                 lines.append(
                     f"- {flag} #{hit.rank} score={hit.score:.6f} "
-                    f"page={hit.page_start}-{hit.page_end} section={section}"
+                    f"page={hit.page_start}-{hit.page_end} type={hit.content_type} section={section}"
                 )
+                if hit.text_preview:
+                    lines.append(f"  - {hit.text_preview[:220]}")
             lines.append("")
     return "\n".join(lines)
 
@@ -68,6 +78,7 @@ def run(
     device: str | None,
     batch_size: int,
     max_seq_length: int | None,
+    tag: str | None,
 ) -> None:
     suite = _load_suite(eval_file)
     manifest = load_manifest(manifest_path)
@@ -88,8 +99,9 @@ def run(
     report = evaluator.evaluate(suite, top_k=top_k)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    json_path = output_dir / "dense_retrieval_eval_report.json"
-    md_path = output_dir / "dense_retrieval_eval_report.md"
+    suffix = _safe_tag(tag)
+    json_path = output_dir / f"dense_retrieval_eval_report{suffix}.json"
+    md_path = output_dir / f"dense_retrieval_eval_report{suffix}.md"
     json_path.write_text(
         json.dumps(report.model_dump(mode="json"), ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -106,8 +118,11 @@ def run(
         "recall_at_5": report.recall_at_5,
         "mrr": report.mrr,
         "no_relevant_in_top_k": report.no_relevant_in_top_k,
+        "tag": tag or "",
     }, ensure_ascii=False, indent=2))
     print(f"\nArtifacts written to: {output_dir.resolve()}")
+    print(f"- {json_path.name}")
+    print(f"- {md_path.name}")
 
 
 def main() -> None:
@@ -118,6 +133,7 @@ def main() -> None:
     parser.add_argument("--embeddings", type=Path, default=None)
     parser.add_argument("--manifest", type=Path, default=None)
     parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument("--tag", default=None, help="Optional experiment tag; prevents report overwrite")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--max-seq-length", type=int, default=2048)
@@ -134,6 +150,7 @@ def main() -> None:
         device=None if args.device.lower() == "auto" else args.device,
         batch_size=args.batch_size,
         max_seq_length=args.max_seq_length,
+        tag=args.tag,
     )
 
 
