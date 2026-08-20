@@ -156,11 +156,20 @@ def run(
         ),
         "table_over_max_chunk_count": sum(chunk.char_count > max_chars for chunk in tables),
         "table_over_max_is_expected": True,
+        "table_raw_fallback_chunk_count": sum(
+            chunk.metadata.get("table_raw_fallback_used") == "true" for chunk in tables
+        ),
+        "table_structured_only_chunk_count": sum(
+            chunk.metadata.get("table_retrieval_strategy") == "structured_only" for chunk in tables
+        ),
+        "table_numeric_mismatch_chunk_count": sum(
+            bool(chunk.metadata.get("table_missing_numeric_tokens")) for chunk in tables
+        ),
         "cross_page_chunk_count": sum(
             1 for chunk in narrative if chunk.page_start != chunk.page_end
         ),
         "config": {
-            "strategy_version": "stable_v1",
+            "strategy_version": "stable_v1_table_retrieval_v1_2",
             "strategy_note": "V1.1 retrieval granularity + V1.2 strict section safety; no aggressive short-chunk merge",
             "target_chars": target_chars,
             "max_chars": max_chars,

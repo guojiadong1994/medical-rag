@@ -8,6 +8,7 @@ from pathlib import Path
 from medical_rag.chunking.models import ChunkedDocument, DocumentChunk
 from medical_rag.chunking.paragraph_assembler import ParagraphAssembler
 from medical_rag.chunking.section_detector import SectionDetector
+from medical_rag.chunking.table_retrieval_text import TableRetrievalTextBuilder
 from medical_rag.parsing.models import CleanedDocument, TableBlock, TextBlock
 
 
@@ -76,6 +77,7 @@ class StructureAwareChunker:
         self.min_chars = min_chars
         self.overlap_chars = overlap_chars
         self.section_detector = SectionDetector()
+        self.table_text_builder = TableRetrievalTextBuilder()
         self.paragraph_assembler = ParagraphAssembler()
 
     def chunk(self, document: CleanedDocument) -> ChunkedDocument:
@@ -543,9 +545,8 @@ class StructureAwareChunker:
         index: int,
         metadata: dict[str, str],
     ) -> DocumentChunk:
-        text = table.search_text.strip() or table.markdown.strip()
-        if not text:
-            text = table.title or f"表格 {table.table_no + 1}"
+        retrieval = self.table_text_builder.build(table)
+        text = retrieval.text
         context = list(section_path)
         if table.title and (not context or context[-1] != table.title):
             context.append(table.title)
@@ -563,7 +564,14 @@ class StructureAwareChunker:
             char_count=len(text),
             table_title=table.title,
             table_no=table.table_no,
-            metadata=dict(metadata),
+            metadata={
+                **dict(metadata),
+                "table_retrieval_strategy": retrieval.strategy,
+                "table_raw_fallback_used": str(retrieval.used_raw_fallback).lower(),
+                "table_missing_numeric_tokens": ",".join(retrieval.missing_numeric_tokens),
+                "table_extraction_strategy": table.extraction_strategy,
+                "table_quality_flags": ",".join(table.quality_flags),
+            },
         )
 
     @classmethod
