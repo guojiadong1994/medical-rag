@@ -49,7 +49,10 @@ class SentenceTransformerEmbedder:
         if max_seq_length is not None:
             self._model.max_seq_length = max_seq_length
 
-        dimension = self._model.get_sentence_embedding_dimension()
+        get_dimension = getattr(self._model, "get_embedding_dimension", None)
+        if get_dimension is None:
+            get_dimension = self._model.get_sentence_embedding_dimension
+        dimension = get_dimension()
         if dimension is None:
             probe = self._model.encode(
                 ["dimension probe"],

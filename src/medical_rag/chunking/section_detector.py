@@ -125,8 +125,9 @@ class SectionDetector:
             force_plain
             or block.is_bold
             or (
-                len(rest) <= min(self.max_title_chars, 36)
-                and self._title_shape_ok(rest)
+                self._plain_integer_number_ok(number)
+                and len(rest) <= min(self.max_title_chars, 36)
+                and self._plain_integer_title_ok(rest)
                 and not self._looks_like_sentence(rest)
             )
         )
@@ -166,6 +167,28 @@ class SectionDetector:
     @staticmethod
     def _looks_like_long_body(text: str) -> bool:
         return len(text) > 90 or bool(re.search(r"[。！？；;].{8,}", text))
+
+    @staticmethod
+    def _plain_integer_number_ok(number: str) -> bool:
+        if "." in number:
+            return True
+        try:
+            value = int(number)
+        except ValueError:
+            return False
+        # Medical guideline top-level sections are normally small integers.
+        # This rejects percentile/value fragments such as ``95 定义为高血压...``.
+        return 1 <= value <= 30
+
+    @classmethod
+    def _plain_integer_title_ok(cls, text: str) -> bool:
+        if not cls._title_shape_ok(text):
+            return False
+        # Numeric thresholds / ratios are strong evidence that this is body text,
+        # not a plain top-level heading.
+        if re.search(r"[<>≥≤=%/]|P\d|\d[~～-]\d", text, re.IGNORECASE):
+            return False
+        return True
 
     @classmethod
     def _title_shape_ok(cls, text: str) -> bool:
