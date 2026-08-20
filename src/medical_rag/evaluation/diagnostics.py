@@ -151,7 +151,7 @@ def diagnose_recall(
     bm25_index: LocalBM25Index,
     embedder: TextEmbedder,
     top_k: int = 10,
-    candidate_k: int = 30,
+    candidate_k: int = 50,
     deep_k: int | None = None,
     rrf_k: int = 60,
     dense_weight: float = 1.0,

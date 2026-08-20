@@ -184,3 +184,21 @@ class HybridRetrievalEvaluator:
             ),
             top_k=top_k,
         )
+
+
+class RerankedHybridRetrievalEvaluator:
+    def __init__(self, *, index) -> None:
+        self.index = index
+
+    def evaluate(self, suite: RetrievalEvalSuite, *, top_k: int = 10) -> RetrievalEvalReport:
+        return evaluate_retriever(
+            suite,
+            search=lambda query, k: self.index.search(query, top_k=k).hits,
+            retriever_name="hybrid_rerank",
+            model_name=(
+                f"{self.index.hybrid_index.dense_index.manifest.model_name}+"
+                f"{self.index.hybrid_index.bm25_index.tokenizer.name}+"
+                f"{self.index.reranker.model_name}"
+            ),
+            top_k=top_k,
+        )

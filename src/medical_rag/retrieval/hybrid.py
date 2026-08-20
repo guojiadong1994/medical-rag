@@ -23,7 +23,7 @@ class ReciprocalRankFusionIndex:
         dense_index: LocalDenseIndex,
         bm25_index: LocalBM25Index,
         embedder: TextEmbedder,
-        candidate_k: int = 30,
+        candidate_k: int = 50,
         rrf_k: int = 60,
         dense_weight: float = 1.0,
         bm25_weight: float = 1.0,

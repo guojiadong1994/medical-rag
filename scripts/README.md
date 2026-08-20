@@ -8,3 +8,22 @@
 - `search_dense_local.py`：在接入 Milvus 前，用 NumPy 做本地 Top-K Dense Retrieval 验证。
 
 更详细的阶段说明统一放在项目根目录 `doc/`。
+
+## Reranker V1
+
+```bash
+python scripts/evaluate_reranker.py \
+  data/processed/hypertension_2024/chunks.json \
+  --eval-file doc/evaluation/hypertension_2024_dense_eval_seed.json \
+  --candidate-k 50 \
+  --rerank-k 20 \
+  --top-k 10
+```
+
+单问题：
+
+```bash
+python scripts/search_hybrid_rerank_local.py \
+  data/processed/hypertension_2024/chunks.json \
+  --query "2级高血压的舒张压范围是多少？"
+```

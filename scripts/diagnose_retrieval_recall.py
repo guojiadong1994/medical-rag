@@ -97,7 +97,7 @@ def main() -> None:
     parser.add_argument("chunks_json", type=Path)
     parser.add_argument("--eval-file", type=Path, required=True)
     parser.add_argument("--top-k", type=int, default=10)
-    parser.add_argument("--candidate-k", type=int, default=30)
+    parser.add_argument("--candidate-k", type=int, default=50)
     parser.add_argument(
         "--deep-k",
         type=int,

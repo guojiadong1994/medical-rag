@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from medical_rag.chunking.models import ChunkContentType
 
 
-RetrievalMethod = Literal["dense", "bm25", "hybrid_rrf"]
+RetrievalMethod = Literal["dense", "bm25", "hybrid_rrf", "hybrid_rerank"]
 
 
 class SearchHit(BaseModel):
@@ -43,6 +43,17 @@ class HybridSearchHit(SearchHit):
     bm25_score: float | None = None
 
 
+class RerankedHybridSearchHit(SearchHit):
+    retrieval_method: Literal["hybrid_rerank"] = "hybrid_rerank"
+    reranker_score: float
+    pre_rerank_rank: int
+    rrf_score: float
+    dense_rank: int | None = None
+    dense_score: float | None = None
+    bm25_rank: int | None = None
+    bm25_score: float | None = None
+
+
 class DenseSearchResponse(BaseModel):
     query: str
     model_name: str
@@ -64,3 +75,15 @@ class HybridSearchResponse(BaseModel):
     candidate_k: int
     rrf_k: int
     hits: list[HybridSearchHit] = Field(default_factory=list)
+
+
+class RerankedHybridSearchResponse(BaseModel):
+    query: str
+    method: Literal["hybrid_rerank"] = "hybrid_rerank"
+    top_k: int
+    candidate_k: int
+    rrf_k: int
+    rerank_k: int
+    reranker_model: str
+    reranker_device: str
+    hits: list[RerankedHybridSearchHit] = Field(default_factory=list)

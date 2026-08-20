@@ -8,6 +8,8 @@ from medical_rag.retrieval.models import (
     DenseSearchResponse,
     HybridSearchHit,
     HybridSearchResponse,
+    RerankedHybridSearchHit,
+    RerankedHybridSearchResponse,
     SearchHit,
 )
 
@@ -23,4 +25,6 @@ __all__ = [
     "BM25SearchResponse",
     "HybridSearchHit",
     "HybridSearchResponse",
+    "RerankedHybridSearchHit",
+    "RerankedHybridSearchResponse",
 ]

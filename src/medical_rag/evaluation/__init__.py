@@ -15,6 +15,7 @@ from medical_rag.evaluation.retrieval import (
     BM25RetrievalEvaluator,
     DenseRetrievalEvaluator,
     HybridRetrievalEvaluator,
+    RerankedHybridRetrievalEvaluator,
     evaluate_retriever,
     is_relevant,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "DenseRetrievalEvaluator",
     "BM25RetrievalEvaluator",
     "HybridRetrievalEvaluator",
+    "RerankedHybridRetrievalEvaluator",
     "evaluate_retriever",
     "is_relevant",
     "MethodEvidenceRank",
