@@ -1,10 +1,10 @@
-# medical-rag · Evaluation V2 完整替换包
+# medical-rag · Milvus V1 完整替换包
 
-这一版基于上一版 Reranker V1 完整工作包继续开发，保留现有 `src/`、`scripts/`、`doc/`、`tests/` 和 `pyproject.toml`，新增 Evidence-level Multi-positive Evaluation V2。
+这一版基于 Evaluation V2 完整工作包继续开发，保留现有 `src/`、`scripts/`、`doc/`、`tests/`、`pyproject.toml` 全部内容，并新增 Milvus V1。
 
 ## 替换方式
 
-用本包中的目录/文件整体覆盖项目对应内容：
+整体覆盖项目对应内容：
 
 ```text
 src/
@@ -22,65 +22,82 @@ data/
 .git/
 ```
 
-## 先测试
-
-```bash
-pip install -e ".[dev,embedding,reranker]"
-pytest -q
-```
-
-本包已验证：
+## 已验证
 
 ```text
-19 passed
+23 passed
 ```
 
-## 第一步：只审计标签，不加载模型
+## 安装
 
 ```bash
-python scripts/audit_eval_labels.py \
-  data/processed/hypertension_2024/chunks.json \
-  --eval-file doc/evaluation/hypertension_2024_retrieval_eval_v2.json
+pip install -e ".[dev,embedding,reranker,milvus]"
 ```
 
-把终端输出发回，重点看：
-
-```text
-zero_match_case_count
-```
-
-应为 0。
-
-## 第二步：用 V2 重新评测 Reranker
+## 第一步：写入 Milvus Lite
 
 ```bash
-python scripts/evaluate_reranker.py \
+python scripts/ingest_milvus.py \
   data/processed/hypertension_2024/chunks.json \
-  --eval-file doc/evaluation/hypertension_2024_retrieval_eval_v2.json \
+  --uri data/milvus/medical_rag.db \
+  --collection medical_rag_chunks_v1
+```
+
+这一步直接复用当前 `embeddings.npy`，不用重新 Parse / Chunk / Embedding。
+
+## 第二步：Milvus Dense Search
+
+```bash
+python scripts/search_dense_milvus.py \
+  data/processed/hypertension_2024/chunks.json \
+  --query "2级高血压的收缩压和舒张压范围是多少？" \
+  --top-k 5 \
+  --uri data/milvus/medical_rag.db
+```
+
+## 第三步：验证 Metadata Filter
+
+```bash
+python scripts/search_dense_milvus.py \
+  data/processed/hypertension_2024/chunks.json \
+  --query "高血压分级" \
+  --content-type table \
+  --top-k 5
+```
+
+## 第四步：与 Local Dense 对比
+
+```bash
+python scripts/compare_dense_backends.py \
+  data/processed/hypertension_2024/chunks.json \
+  --query "2级高血压的收缩压和舒张压范围是多少？" \
   --top-k 10 \
-  --candidate-k 50 \
-  --rerank-k 20 \
-  --tag bge_reranker_base_eval_v2
+  --uri data/milvus/medical_rag.db
 ```
 
-不需要重新 Parse、Chunk、Embedding。
-
-## V1 仍然保留
-
-历史文件：
+重点看：
 
 ```text
-doc/evaluation/hypertension_2024_dense_eval_seed.json
+overlap_ratio
+same_rank_ratio
+first_rank_mismatch
 ```
 
-不要删除。后续可以明确区分：
-
-- V1：原始窄标签 baseline
-- V2：multi-positive evidence-level labels
-
-详细原理见：
+详细原理：
 
 ```text
-doc/RETRIEVAL_EVALUATION_V2.md
-doc/RETRIEVAL_EVALUATION_V2_CHANGELOG.md
+doc/MILVUS_V1.md
+doc/MILVUS_V1_CHANGELOG.md
 ```
+
+## 数据安全
+
+默认 ingestion 只执行 `upsert`，不会删除 Collection。
+
+只有显式加入：
+
+```text
+--recreate
+```
+
+才会 drop Collection。日常运行不要使用该参数。

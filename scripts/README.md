@@ -32,3 +32,29 @@ python scripts/search_hybrid_rerank_local.py \
 ## Evaluation V2
 
 - `audit_eval_labels.py`: 在不加载 Embedding/Reranker 的情况下，扫描当前 chunks，检查每道评测题有多少个可接受 evidence，以及各 evidence rule 实际匹配到哪些 Chunk。
+
+## Milvus V1
+
+写入当前 Chunk Embedding：
+
+```bash
+python scripts/ingest_milvus.py \
+  data/processed/hypertension_2024/chunks.json
+```
+
+Milvus Dense Search：
+
+```bash
+python scripts/search_dense_milvus.py \
+  data/processed/hypertension_2024/chunks.json \
+  --query "2级高血压的收缩压和舒张压范围是多少？"
+```
+
+Local Dense / Milvus 一致性验证：
+
+```bash
+python scripts/compare_dense_backends.py \
+  data/processed/hypertension_2024/chunks.json \
+  --query "2级高血压的收缩压和舒张压范围是多少？" \
+  --top-k 10
+```
