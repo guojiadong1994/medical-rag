@@ -41,7 +41,6 @@ datasets/
 uploads/
 storage/
 artifacts/
-
 # Local databases, indexes, vector stores, and model weights.
 *.db
 *.sqlite

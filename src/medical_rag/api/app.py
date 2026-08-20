@@ -15,7 +15,7 @@ from medical_rag.rag.runtime import get_runtime_status
 settings = get_settings()
 app = FastAPI(
     title="medical-rag",
-    version="1.0.0",
+    version="1.1.0",
     description="Medical knowledge retrieval augmented generation service",
 )
 
@@ -42,7 +42,7 @@ async def health() -> dict:
         "status": "ok",
         "service": settings.app_name,
         "environment": settings.app_env,
-        "version": "1.0.0",
+        "version": "1.1.0",
         "rag": {
             "configured": not readiness_errors,
             "loaded": runtime.loaded,
@@ -60,8 +60,8 @@ async def system_info() -> dict:
     return {
         "project": "JD 特定人群生理孪生与医疗保障大模型平台",
         "module": "多源图文医疗知识增强检索子系统",
-        "version": "1.0.0",
-        "current_scope": "医疗指南单知识库问答 V1.0",
+        "version": "1.1.0",
+        "current_scope": "医疗知识库自动入库与多文档问答 V1.1",
         "capabilities": [
             "混合检索",
             "神经重排序",
@@ -71,6 +71,9 @@ async def system_info() -> dict:
             "引用追踪",
             "证据不足拒答",
             "个体化医疗安全边界",
+            "PDF自动知识入库",
+            "多文档本地检索",
+            "知识处理进度追踪",
         ],
     }
 

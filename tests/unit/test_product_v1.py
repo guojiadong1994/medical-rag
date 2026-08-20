@@ -136,6 +136,6 @@ def test_health_exposes_rag_runtime_state():
     response = client.get("/health")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["version"] == "1.0.0"
+    assert payload["version"] == "1.1.0"
     assert "rag" in payload
     assert "dense_backend" in payload["rag"]

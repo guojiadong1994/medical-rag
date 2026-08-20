@@ -8,7 +8,9 @@ from time import perf_counter
 from pydantic import BaseModel, Field
 
 from medical_rag.core.config import Settings
+from medical_rag.core.paths import project_path
 from medical_rag.embedding.io import load_chunks, load_manifest, validate_chunks_against_manifest
+from medical_rag.ingestion.store import load_knowledge_base_artifacts
 from medical_rag.embedding.sentence_transformer_embedder import SentenceTransformerEmbedder
 from medical_rag.generation.client import OpenAICompatibleChatClient, OpenAICompatibleConfig
 from medical_rag.generation.service import GroundedAnswerGenerator, is_abstention_answer
@@ -114,9 +116,18 @@ class MedicalRAGPipeline:
         if errors:
             raise RAGPipelineConfigurationError("; ".join(errors))
 
-        chunks = load_chunks(settings.chunks_path)
-        manifest = load_manifest(settings.manifest_path)
-        validate_chunks_against_manifest(chunks, manifest)
+        if settings.rag_dense_backend == "local":
+            knowledge = load_knowledge_base_artifacts(
+                legacy_chunks_path=settings.chunks_path,
+                legacy_embeddings_path=settings.embeddings_path,
+                legacy_manifest_path=settings.manifest_path,
+            )
+            chunks = knowledge.chunks
+            manifest = knowledge.manifest
+        else:
+            chunks = load_chunks(settings.chunks_path)
+            manifest = load_manifest(settings.manifest_path)
+            validate_chunks_against_manifest(chunks, manifest)
 
         # Load the embedding model before Milvus, but do not perform a query
         # forward pass yet. This preserves the macOS MPS + Milvus lifecycle order
@@ -147,10 +158,10 @@ class MedicalRAGPipeline:
             # embedding forward pass.
             dense_index.ensure_loaded()
         else:
-            dense_index = LocalDenseIndex.load(
-                chunks_path=settings.chunks_path,
-                embeddings_path=settings.embeddings_path,
-                manifest_path=settings.manifest_path,
+            dense_index = LocalDenseIndex(
+                chunks=chunks,
+                embeddings=knowledge.embeddings,
+                manifest=manifest,
             )
 
         bm25_index = LocalBM25Index(chunks=chunks)
@@ -290,11 +301,12 @@ class MedicalRAGPipeline:
 
 def verify_runtime_paths(settings: Settings) -> dict[str, bool]:
     return {
-        "chunks": Path(settings.rag_chunks_path).exists(),
-        "manifest": Path(settings.rag_manifest_path).exists(),
-        "embeddings": Path(settings.rag_embeddings_path).exists(),
+        "legacy_chunks": settings.chunks_path.exists(),
+        "legacy_manifest": settings.manifest_path.exists(),
+        "legacy_embeddings": settings.embeddings_path.exists(),
+        "knowledge_registry": project_path("data/knowledge/registry.json").exists(),
         "milvus_file": (
-            Path(settings.rag_milvus_uri).exists()
+            project_path(settings.rag_milvus_uri).exists()
             if "://" not in settings.rag_milvus_uri
             else True
         ),

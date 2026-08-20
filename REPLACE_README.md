@@ -1,48 +1,52 @@
-# 完整项目恢复说明
+# V1.1 安全更新说明
 
-这不是只包含后端或临时演示页面的包。
+这次是完整项目代码包，但 **不要再整体删除旧项目后替换**。
 
-本包包含：
-
-- 原有 `apps/web/` 智护医疗完整前端；
-- 当前最新 `src/` 医疗 RAG 后端；
-- `scripts/`、`doc/`、`tests/`；
-- `deployment/`、`migrations/`；
-- 根目录配置与启动文件。
-
-## 最安全的恢复方法
-
-不要把旧项目整个删除，因为你的本地 `.env`、`data/processed/`、Milvus 数据库和 `.git/` 不在源码包里。
-
-### 方法 A：推荐
-
-把这个完整包解压到任意临时目录，然后在解压后的项目根目录运行：
-
-```bash
-bash SAFE_RESTORE_TO_EXISTING_PROJECT.sh "/你的/medical-rag/原项目路径"
-```
-
-它会：
-
-- 恢复/覆盖 `apps/`、`src/`、`scripts/`、`doc/`、`tests/`、`deployment/`、`migrations/`；
-- 恢复根目录源码配置；
-- **不会删除或覆盖**目标项目中的 `.git/`、`.env` 和已有 `data/`。
-
-### 方法 B：新建完整项目副本
-
-解压本包后，把旧项目中的：
+你的本机运行数据包括：
 
 ```text
+data/processed/
+data/knowledge/
+data/milvus/
 .env
 .git/
-data/
 ```
 
-复制进新目录，再运行安装与启动命令。
+这些不应该由源码包覆盖。
 
-## 验证
+## 推荐更新方式
+
+解压本包后，在解压目录执行：
 
 ```bash
+bash SAFE_UPDATE_EXISTING_PROJECT.sh "/Users/guojiadong/.../medical-rag"
+```
+
+脚本会更新：
+
+```text
+apps/
+src/
+scripts/
+doc/
+tests/
+deployment/
+migrations/
+以及根目录代码和配置模板
+```
+
+脚本不会删除或覆盖：
+
+```text
+data/
+.env
+.git/
+```
+
+## 更新后
+
+```bash
+cd "/你的/medical-rag"
 pip install -e ".[product,dev]"
 pytest -q
 python scripts/preflight_v1.py
@@ -57,8 +61,10 @@ npm install
 npm run dev
 ```
 
-访问：
+## V1.1 重点验收
 
-```text
-http://127.0.0.1:5173
-```
+1. AI 健康助手发送问题后立即出现“正在分析问题”的对话气泡；
+2. 回答中的常见 Markdown 排版不再以原始符号直接显示；
+3. 引用来源优先展示真正用于答案的证据，其余证据折叠；
+4. 管理员上传新 PDF 后状态自动经过：解析 → 分块 → 向量化 → 已索引；
+5. 新文档完成后，无需手工执行脚本即可参与后续问答。

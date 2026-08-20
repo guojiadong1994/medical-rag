@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from medical_rag.core.paths import project_path
+
 
 class Settings(BaseSettings):
     """Application and Product V1 runtime settings.
@@ -29,9 +31,9 @@ class Settings(BaseSettings):
     rag_embeddings_path: str = "data/processed/hypertension_2024/embeddings.npy"
     rag_manifest_path: str = "data/processed/hypertension_2024/embedding_manifest.json"
 
-    # ``milvus`` is the Product V1 default. Set ``local`` for the exact NumPy
-    # baseline when Milvus is not available.
-    rag_dense_backend: Literal["milvus", "local"] = "milvus"
+    # Local exact retrieval is the default for the single-node macOS product.
+    # Milvus remains available for Linux/server deployment via RAG_DENSE_BACKEND=milvus.
+    rag_dense_backend: Literal["milvus", "local"] = "local"
     rag_milvus_uri: str = "data/milvus/medical_rag.db"
     rag_milvus_collection: str = "medical_rag_chunks_v1"
     rag_milvus_token: str | None = None
@@ -68,26 +70,38 @@ class Settings(BaseSettings):
 
     @property
     def chunks_path(self) -> Path:
-        return Path(self.rag_chunks_path)
+        return project_path(self.rag_chunks_path)
 
     @property
     def embeddings_path(self) -> Path:
-        return Path(self.rag_embeddings_path)
+        return project_path(self.rag_embeddings_path)
 
     @property
     def manifest_path(self) -> Path:
-        return Path(self.rag_manifest_path)
+        return project_path(self.rag_manifest_path)
 
     def rag_readiness_errors(self) -> list[str]:
         errors: list[str] = []
-        for label, path in (
-            ("chunks", self.chunks_path),
-            ("embedding manifest", self.manifest_path),
-        ):
-            if not path.exists():
-                errors.append(f"{label} file not found: {path}")
-        if self.rag_dense_backend == "local" and not self.embeddings_path.exists():
-            errors.append(f"embeddings file not found: {self.embeddings_path}")
+        if self.rag_dense_backend == "milvus":
+            for label, path in (
+                ("chunks", self.chunks_path),
+                ("embedding manifest", self.manifest_path),
+            ):
+                if not path.exists():
+                    errors.append(f"{label} file not found: {path}")
+        else:
+            # The local backend can load the legacy verified guide and any
+            # automatically processed documents from the knowledge registry.
+            from medical_rag.ingestion.store import load_knowledge_base_artifacts
+
+            try:
+                load_knowledge_base_artifacts(
+                    legacy_chunks_path=self.chunks_path,
+                    legacy_embeddings_path=self.embeddings_path,
+                    legacy_manifest_path=self.manifest_path,
+                )
+            except (FileNotFoundError, ValueError) as exc:
+                errors.append(f"knowledge base artifacts are not ready: {exc}")
         if not self.medical_rag_llm_base_url.strip():
             errors.append("MEDICAL_RAG_LLM_BASE_URL is not configured")
         if not self.medical_rag_llm_model.strip():

@@ -48,7 +48,7 @@ def get_runtime_status() -> PipelineRuntimeStatus:
     )
 
 
-def reset_pipeline_for_tests() -> None:
+def reset_pipeline() -> None:
     global _pipeline, _pipeline_error, _loading
     with _lock:
         _pipeline = None
@@ -56,9 +56,15 @@ def reset_pipeline_for_tests() -> None:
         _loading = False
 
 
+def reset_pipeline_for_tests() -> None:
+    reset_pipeline()
+
+
 __all__ = [
     "PipelineRuntimeStatus",
     "RAGPipelineConfigurationError",
     "get_pipeline",
     "get_runtime_status",
+    "reset_pipeline",
+    "reset_pipeline_for_tests",
 ]
