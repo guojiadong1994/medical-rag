@@ -5,6 +5,7 @@ from medical_rag.evaluation.diagnostics import (
 )
 from medical_rag.evaluation.models import (
     EvidenceRule,
+    KeywordProximityRule,
     RetrievalEvalCase,
     RetrievalEvalCaseResult,
     RetrievalEvalHit,
@@ -18,10 +19,12 @@ from medical_rag.evaluation.retrieval import (
     RerankedHybridRetrievalEvaluator,
     evaluate_retriever,
     is_relevant,
+    matching_rule_ids,
 )
 
 __all__ = [
     "EvidenceRule",
+    "KeywordProximityRule",
     "RetrievalEvalCase",
     "RetrievalEvalCaseResult",
     "RetrievalEvalHit",
@@ -33,6 +36,7 @@ __all__ = [
     "RerankedHybridRetrievalEvaluator",
     "evaluate_retriever",
     "is_relevant",
+    "matching_rule_ids",
     "MethodEvidenceRank",
     "RecallDiagnosis",
     "diagnose_recall",

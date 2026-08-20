@@ -48,9 +48,9 @@ def _render_markdown(
     before = _rank_map(hybrid)
     after = _rank_map(reranked)
     lines = [
-        f"# Reranker V1 Evaluation · {suite.name}",
+        f"# Reranker Evaluation · {suite.name}",
         "",
-        "固定 Chunk、Embedding、BM25、RRF 配置，仅增加 Cross-Encoder Reranker，观察排序质量是否提升。",
+        f"固定 Chunk、Embedding、BM25、RRF 配置，仅增加 Cross-Encoder Reranker，观察排序质量是否提升。评测标签版本：{suite.version}。",
         "",
         "## Configuration",
         "",
@@ -76,9 +76,10 @@ def _render_markdown(
         "",
         "## Per-query rank movement",
         "",
-        "| ID | Query | Before | After | Δ |",
-        "|---|---|---:|---:|---:|",
+        "| ID | Query | Before | After | Δ | After matched rule |",
+        "|---|---|---:|---:|---:|---|",
     ]
+    reranked_by_id = {result.id: result for result in reranked.results}
     for case in suite.cases:
         b = before[case.id]
         a = after[case.id]
@@ -91,9 +92,20 @@ def _render_markdown(
         else:
             # Positive means moved toward rank 1.
             delta = f"{b - a:+d}"
+
+        matched_rule = "—"
+        result = reranked_by_id[case.id]
+        if result.first_relevant_rank is not None:
+            first_hit = next(
+                (hit for hit in result.hits if hit.rank == result.first_relevant_rank),
+                None,
+            )
+            if first_hit and first_hit.matched_rule_ids:
+                matched_rule = ", ".join(first_hit.matched_rule_ids)
+
         lines.append(
             f"| {case.id} | {case.query.replace('|', '\\|')} | "
-            f"{b or 'MISS'} | {a or 'MISS'} | {delta} |"
+            f"{b or 'MISS'} | {a or 'MISS'} | {delta} | {matched_rule} |"
         )
     return "\n".join(lines)
 
@@ -191,6 +203,8 @@ def main() -> None:
     }
     payload = {
         "suite_name": suite.name,
+        "suite_version": suite.version,
+        "labeling_policy": suite.labeling_policy,
         "query_count": len(suite.cases),
         "config": config,
         "before": _summary(hybrid_report),
@@ -228,6 +242,7 @@ def main() -> None:
 
     print(json.dumps({
         "suite_name": suite.name,
+        "suite_version": suite.version,
         "query_count": len(suite.cases),
         "before": _summary(hybrid_report),
         "after": _summary(reranked_report),
