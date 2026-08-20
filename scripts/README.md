@@ -96,3 +96,12 @@ python scripts/evaluate_generation_e2e.py \
   --candidate-k 50 \
   --rerank-k 20
 ```
+
+## Generation Safety Evaluation V3
+
+```bash
+python scripts/audit_generation_eval_v3.py
+python scripts/evaluate_generation_safety_v3.py data/processed/hypertension_2024/chunks.json --challenge-only
+```
+
+详见 `doc/GENERATION_SAFETY_EVAL_V3.md`。

@@ -1,74 +1,55 @@
-# Medical RAG — Answer Grounding & Generation Evaluation V1 完整替换包
+# 完整替换包：Generation Safety Evaluation V3
 
-本包以 **LLM Generation V1 完整包**为基线继续开发，保留此前 `src/`、`scripts/`、`doc/`、`tests/`、`pyproject.toml` 的全部文件。
+这是基于上一版 `Answer Grounding & End-to-End Generation Evaluation V1` 的完整可替换目录包。
 
-## 替换方式
+## 替换
 
 将本包中的以下目录/文件整体覆盖到项目根目录：
 
-```text
-src/
-scripts/
-doc/
-tests/
-pyproject.toml
-```
+- `src/`
+- `scripts/`
+- `doc/`
+- `tests/`
+- `pyproject.toml`
 
-不要删除/覆盖你项目中的：
+不要覆盖/删除：
 
-```text
-data/
-.env
-.git/
-```
+- `data/`
+- `.env`
+- `.git/`
 
-## 本阶段新增
-
-- Claim → cited evidence 语义支持判断
-- expected_facts 覆盖率
-- answer correctness
-- faithfulness score
-- fully grounded rate
-- strict overall pass
-- 单题已有生成结果审计
-- 14 道端到端 Generation Evaluation
-- 每题 checkpoint，避免 API 中途失败导致结果全部丢失
-
-## 第一步：测试
+## 验证
 
 ```bash
 pytest -q
 ```
 
-## 第二步：先审计你刚才已经生成成功的 2 级高血压答案
+预期：
 
-```bash
-python scripts/judge_rag_answer.py \
-  data/processed/hypertension_2024/rag/rag_generation_v1.json \
-  --case-id grade2_bp
+```text
+49 passed
 ```
 
-如果没有单独配置 Judge，程序会回退使用你现有的 `MEDICAL_RAG_LLM_*`。
-
-## 第三步：跑完整 14 道端到端评测
+先审计 V3：
 
 ```bash
-python scripts/evaluate_generation_e2e.py \
+python scripts/audit_generation_eval_v3.py
+```
+
+然后先只跑 9 条挑战题：
+
+```bash
+python scripts/evaluate_generation_safety_v3.py \
   data/processed/hypertension_2024/chunks.json \
-  --eval-file doc/evaluation/hypertension_2024_retrieval_eval_v2.json \
+  --challenge-only \
   --context-top-k 5 \
   --max-context-chars 6000 \
   --candidate-k 50 \
   --rerank-k 20
 ```
 
-输出：
+完整 23 题去掉 `--challenge-only` 即可。
 
-```text
-data/processed/hypertension_2024/evaluation/
-├── generation_e2e_checkpoint_v1.json
-├── generation_e2e_eval_v1.json
-└── generation_e2e_eval_v1.md
-```
+## 本版原则
 
-详细原理见：`doc/ANSWER_GROUNDING_EVAL_V1.md`。
+V3 是“测边界”的版本，不是“继续刷 14 条正例”的版本。先测当前系统在拒答、歧义、表面冲突和具体患者用药请求上的真实 baseline，再决定是否增加 Guardrail。
