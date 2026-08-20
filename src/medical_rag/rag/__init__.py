@@ -8,7 +8,15 @@ from medical_rag.rag.context import (
     citation_summary_lines,
     validate_answer_citations,
 )
-from medical_rag.rag.pipeline import MedicalRAGPipeline, RAGRequest, RAGResponse
+from medical_rag.rag.pipeline import (
+    MedicalRAGPipeline,
+    RAGDiagnostics,
+    RAGPipelineConfigurationError,
+    RAGRequest,
+    RAGResponse,
+    RAGSource,
+    RAGTiming,
+)
 from medical_rag.rag.prompt import (
     DEFAULT_GROUNDED_SYSTEM_PROMPT,
     GroundedPromptBuilder,
@@ -18,6 +26,10 @@ from medical_rag.rag.prompt import (
 __all__ = [
     "RAGRequest",
     "RAGResponse",
+    "RAGSource",
+    "RAGTiming",
+    "RAGDiagnostics",
+    "RAGPipelineConfigurationError",
     "MedicalRAGPipeline",
     "RAGCitation",
     "RAGContextSource",

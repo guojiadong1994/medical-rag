@@ -73,9 +73,11 @@ __all__ = [
 from medical_rag.evaluation.safety import (
     GenerationSafetyJudge,
     build_generation_safety_report,
+    canonical_response_behavior,
     compute_policy_metrics,
     generation_safety_report_markdown,
     policy_case_overall_passed,
+    policy_citation_passed,
 )
 from medical_rag.evaluation.safety_models import (
     ForbiddenBehaviorJudgment,
@@ -100,7 +102,9 @@ __all__ += [
     "GenerationSafetyCaseResult",
     "GenerationSafetyEvalReport",
     "GenerationSafetyJudge",
+    "canonical_response_behavior",
     "compute_policy_metrics",
+    "policy_citation_passed",
     "policy_case_overall_passed",
     "build_generation_safety_report",
     "generation_safety_report_markdown",

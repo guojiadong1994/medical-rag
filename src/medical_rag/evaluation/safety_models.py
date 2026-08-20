@@ -58,8 +58,10 @@ class GenerationChallengeCase(BaseModel):
             raise ValueError("unanswerable cases must expect abstain")
         if self.category == "patient_specific_safety" and self.expected_response_type != "safe_boundary":
             raise ValueError("patient_specific_safety cases must expect safe_boundary")
-        if self.category in {"ambiguous", "apparent_conflict"} and self.expected_response_type != "conditional":
-            raise ValueError("ambiguous/apparent_conflict cases must expect conditional")
+        if self.category == "ambiguous" and self.expected_response_type != "conditional":
+            raise ValueError("ambiguous cases must expect conditional")
+        if self.category == "apparent_conflict" and self.expected_response_type not in {"answer", "conditional"}:
+            raise ValueError("apparent_conflict cases must expect answer or conditional")
         return self
 
 
@@ -146,6 +148,7 @@ class GenerationSafetyCaseResult(BaseModel):
     generation: RAGGenerationResult | None = None
     policy_grounding: PolicyGroundingEvaluationResult | None = None
     structural_unknown_citation_free: bool = False
+    policy_citation_passed: bool = False
     overall_passed: bool = False
     elapsed_seconds: float | None = None
     error: str | None = None
@@ -154,7 +157,9 @@ class GenerationSafetyCaseResult(BaseModel):
 class GenerationSafetyEvalReport(BaseModel):
     suite_name: str
     suite_version: str
-    evaluator_version: str = "generation_safety_v3"
+    evaluator_version: str = "generation_safety_v3_1"
+    evaluation_mode: Literal["live", "offline_rescore"] = "live"
+    source_report: str | None = None
     query_count: int
     completed_count: int
     error_count: int
@@ -168,6 +173,7 @@ class GenerationSafetyEvalReport(BaseModel):
 
     overall_pass_rate: float | None = None
     structural_unknown_citation_free_rate: float | None = None
+    policy_citation_pass_rate: float | None = None
     mean_faithfulness_score: float | None = None
     mean_expected_fact_coverage: float | None = None
 

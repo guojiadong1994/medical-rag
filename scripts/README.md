@@ -1,5 +1,17 @@
 # Scripts
 
+## Medical RAG V1.0 成品入口
+
+```bash
+python scripts/preflight_v1.py
+python scripts/ask_v1.py "2级高血压的收缩压和舒张压范围是多少？"
+```
+
+- `preflight_v1.py`：启动前检查配置和运行文件，不调用大模型。
+- `ask_v1.py`：直接通过统一 MedicalRAGPipeline（医疗 RAG 完整处理流程）执行一次真实问答。
+
+其余脚本保留用于解析、检索实验和离线评测。
+
 当前可直接运行的离线脚本：
 
 - `parse_pdf.py`：PDF 文本/表格解析与清洗。
@@ -105,3 +117,29 @@ python scripts/evaluate_generation_safety_v3.py data/processed/hypertension_2024
 ```
 
 详见 `doc/GENERATION_SAFETY_EVAL_V3.md`。
+
+## Generation Safety Evaluation V3.1
+
+先审计：
+
+```bash
+python scripts/audit_generation_eval_v3_1.py
+```
+
+已有 V3 结果时，优先零 LLM 调用离线重评分：
+
+```bash
+python scripts/rescore_generation_safety_v3_1.py
+```
+
+需要完整 live rerun 时：
+
+```bash
+python scripts/evaluate_generation_safety_v3_1.py \
+  data/processed/hypertension_2024/chunks.json \
+  --challenge-only \
+  --context-top-k 5 \
+  --max-context-chars 6000 \
+  --candidate-k 50 \
+  --rerank-k 20
+```

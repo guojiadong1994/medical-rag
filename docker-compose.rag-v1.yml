@@ -1,0 +1,13 @@
+services:
+  medical-rag-v1:
+    build:
+      context: .
+      dockerfile: Dockerfile.rag-v1
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    restart: unless-stopped

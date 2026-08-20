@@ -27,6 +27,7 @@ class GroundingCheck(BaseModel):
     status: Literal[
         "passed",
         "no_evidence",
+        "abstained",
         "missing_citation",
         "unknown_citation",
     ]

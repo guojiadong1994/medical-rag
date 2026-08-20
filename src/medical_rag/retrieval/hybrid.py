@@ -4,8 +4,18 @@ from collections import defaultdict
 
 from medical_rag.embedding.base import TextEmbedder
 from medical_rag.retrieval.bm25 import LocalBM25Index
-from medical_rag.retrieval.local_dense import LocalDenseIndex
-from medical_rag.retrieval.models import HybridSearchHit, HybridSearchResponse, SearchHit
+from typing import Protocol
+
+from medical_rag.retrieval.models import (
+    DenseSearchResponse,
+    HybridSearchHit,
+    HybridSearchResponse,
+    SearchHit,
+)
+
+
+class DenseSearchIndex(Protocol):
+    def search(self, query: str, *, embedder: TextEmbedder, top_k: int = 5) -> DenseSearchResponse: ...
 
 
 class ReciprocalRankFusionIndex:
@@ -20,7 +30,7 @@ class ReciprocalRankFusionIndex:
     def __init__(
         self,
         *,
-        dense_index: LocalDenseIndex,
+        dense_index: DenseSearchIndex,
         bm25_index: LocalBM25Index,
         embedder: TextEmbedder,
         candidate_k: int = 50,
@@ -34,7 +44,8 @@ class ReciprocalRankFusionIndex:
             raise ValueError("rrf_k must be positive")
         if dense_weight <= 0 or bm25_weight <= 0:
             raise ValueError("fusion weights must be positive")
-        if [chunk.chunk_id for chunk in dense_index.chunks] != [
+        dense_chunks = getattr(dense_index, "chunks", None)
+        if dense_chunks is not None and [chunk.chunk_id for chunk in dense_chunks] != [
             chunk.chunk_id for chunk in bm25_index.chunks
         ]:
             raise ValueError("dense and BM25 indexes must be built from the same chunks")

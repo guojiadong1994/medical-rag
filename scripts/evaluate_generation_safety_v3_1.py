@@ -75,13 +75,13 @@ def _load_cases(
     challenges = [] if positive_only else challenge_suite.cases
     cases = positives + challenges
     name = (
-        "hypertension_2024_generation_positive_v3"
+        "hypertension_2024_generation_positive_v3_1"
         if positive_only
         else challenge_suite.name
         if challenge_only
-        else "hypertension_2024_generation_safety_combined_v3"
+        else "hypertension_2024_generation_safety_combined_v3_1"
     )
-    return name, "v3", cases
+    return name, challenge_suite.version, cases
 
 
 def _write_checkpoint(path: Path, results: list[GenerationSafetyCaseResult]) -> None:
@@ -93,7 +93,7 @@ def _write_checkpoint(path: Path, results: list[GenerationSafetyCaseResult]) -> 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run Generation Safety Evaluation V3: answerable + abstention + ambiguity + conflict + patient safety"
+        description="Run Generation Safety Evaluation V3.1: corrected policy-aware scoring for abstention, ambiguity/conflict and patient safety"
     )
     parser.add_argument("chunks_json", type=Path)
     parser.add_argument(
@@ -104,7 +104,7 @@ def main() -> None:
     parser.add_argument(
         "--challenge-eval-file",
         type=Path,
-        default=Path("doc/evaluation/hypertension_2024_generation_challenge_v3.json"),
+        default=Path("doc/evaluation/hypertension_2024_generation_challenge_v3_1.json"),
     )
     parser.add_argument("--positive-only", action="store_true")
     parser.add_argument("--challenge-only", action="store_true")
@@ -186,7 +186,7 @@ def main() -> None:
     parent = args.chunks_json.parent
     output_dir = args.output_dir or parent / "evaluation"
     output_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = output_dir / "generation_safety_checkpoint_v3.json"
+    checkpoint_path = output_dir / "generation_safety_checkpoint_v3_1.json"
 
     manifest_path = args.manifest or parent / "embedding_manifest.json"
     embeddings_path = args.embeddings or parent / "embeddings.npy"
@@ -337,8 +337,8 @@ def main() -> None:
         results=results,
     )
 
-    json_path = output_dir / "generation_safety_eval_v3.json"
-    md_path = output_dir / "generation_safety_eval_v3.md"
+    json_path = output_dir / "generation_safety_eval_v3_1.json"
+    md_path = output_dir / "generation_safety_eval_v3_1.md"
     json_path.write_text(
         json.dumps(report.model_dump(mode="json"), ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -353,6 +353,7 @@ def main() -> None:
         "generation_model": report.generation_model,
         "judge_model": report.judge_model,
         "overall_pass_rate": report.overall_pass_rate,
+        "policy_citation_pass_rate": report.policy_citation_pass_rate,
         "answerable_answer_accuracy": report.answerable_answer_accuracy,
         "answerable_false_refusal_rate": report.answerable_false_refusal_rate,
         "unanswerable_abstention_accuracy": report.unanswerable_abstention_accuracy,
@@ -370,9 +371,9 @@ def main() -> None:
     }
     print("\n" + json.dumps(summary, ensure_ascii=False, indent=2))
     print(f"\nArtifacts written to: {output_dir.resolve()}")
-    print("- generation_safety_checkpoint_v3.json")
-    print("- generation_safety_eval_v3.json")
-    print("- generation_safety_eval_v3.md")
+    print("- generation_safety_checkpoint_v3_1.json")
+    print("- generation_safety_eval_v3_1.json")
+    print("- generation_safety_eval_v3_1.md")
 
 
 if __name__ == "__main__":
