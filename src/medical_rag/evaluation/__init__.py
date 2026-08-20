@@ -1,3 +1,8 @@
+from medical_rag.evaluation.diagnostics import (
+    MethodEvidenceRank,
+    RecallDiagnosis,
+    diagnose_recall,
+)
 from medical_rag.evaluation.models import (
     EvidenceRule,
     RetrievalEvalCase,
@@ -26,4 +31,7 @@ __all__ = [
     "HybridRetrievalEvaluator",
     "evaluate_retriever",
     "is_relevant",
+    "MethodEvidenceRank",
+    "RecallDiagnosis",
+    "diagnose_recall",
 ]
