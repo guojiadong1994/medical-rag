@@ -169,3 +169,75 @@ def test_compare_dense_rankings_reports_overlap_separately_from_exact_order() ->
     assert comparison["overlap_ratio"] == 1.0
     assert comparison["same_rank_ratio"] == 0.333333
     assert comparison["first_rank_mismatch"] == 2
+
+
+class _LoadState:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+class _LifecycleClient(_FakeClient):
+    def __init__(self, events: list[str], *, initially_loaded: bool = False) -> None:
+        super().__init__()
+        self.events = events
+        self.loaded = initially_loaded
+        self.load_calls = 0
+
+    def get_load_state(self, *, collection_name: str):
+        assert collection_name == "chunks"
+        self.events.append("get_load_state")
+        return {"state": _LoadState("Loaded" if self.loaded else "NotLoad")}
+
+    def load_collection(self, *, collection_name: str) -> None:
+        assert collection_name == "chunks"
+        self.events.append("load_collection")
+        self.load_calls += 1
+        self.loaded = True
+
+    def search(self, **kwargs):
+        self.events.append("search")
+        return super().search(**kwargs)
+
+
+class _LifecycleEmbedder(_DummyEmbedder):
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    def encode_query(self, text: str) -> np.ndarray:
+        self.events.append("encode_query")
+        return super().encode_query(text)
+
+
+def test_milvus_search_loads_collection_before_query_embedding() -> None:
+    chunks = [_chunk()]
+    events: list[str] = []
+    client = _LifecycleClient(events)
+    index = MilvusDenseIndex(
+        uri="fake.db",
+        collection_name="chunks",
+        manifest=_manifest(chunks),
+        client=client,
+    )
+
+    index.search("二级高血压舒张压是多少？", embedder=_LifecycleEmbedder(events))
+
+    assert client.load_calls == 1
+    assert events.index("load_collection") < events.index("encode_query")
+    assert events.index("encode_query") < events.index("search")
+
+
+def test_ensure_loaded_does_not_reload_an_already_loaded_collection() -> None:
+    chunks = [_chunk()]
+    events: list[str] = []
+    client = _LifecycleClient(events, initially_loaded=True)
+    index = MilvusDenseIndex(
+        uri="fake.db",
+        collection_name="chunks",
+        manifest=_manifest(chunks),
+        client=client,
+    )
+
+    index.ensure_loaded()
+
+    assert client.load_calls == 0
+    assert events == ["get_load_state"]

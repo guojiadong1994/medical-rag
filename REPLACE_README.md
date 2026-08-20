@@ -1,10 +1,21 @@
-# medical-rag · Milvus V1 完整替换包
+# Milvus V1.1 Runtime Lifecycle Fix · 完整替换包
 
-这一版基于 Evaluation V2 完整工作包继续开发，保留现有 `src/`、`scripts/`、`doc/`、`tests/`、`pyproject.toml` 全部内容，并新增 Milvus V1。
+本包基于 Milvus V1 当前完整版本制作，保留所有既有 `src/`、`scripts/`、`doc/`、
+`tests/` 和 `pyproject.toml` 内容，只修复 macOS ARM64 + MPS + Milvus Lite 查询时
+的 Collection load 生命周期问题。
 
-## 替换方式
+## 不要删除
 
-整体覆盖项目对应内容：
+```text
+data/
+.env
+.git/
+data/milvus/medical_rag.db
+```
+
+已有 500 条 Milvus 数据无需重新 ingest。
+
+## 替换
 
 ```text
 src/
@@ -14,38 +25,13 @@ tests/
 pyproject.toml
 ```
 
-不要删除项目自己的：
-
-```text
-data/
-.env
-.git/
-```
-
-## 已验证
-
-```text
-23 passed
-```
-
-## 安装
+## 验证
 
 ```bash
-pip install -e ".[dev,embedding,reranker,milvus]"
+pytest -q
 ```
 
-## 第一步：写入 Milvus Lite
-
-```bash
-python scripts/ingest_milvus.py \
-  data/processed/hypertension_2024/chunks.json \
-  --uri data/milvus/medical_rag.db \
-  --collection medical_rag_chunks_v1
-```
-
-这一步直接复用当前 `embeddings.npy`，不用重新 Parse / Chunk / Embedding。
-
-## 第二步：Milvus Dense Search
+然后直接重新运行：
 
 ```bash
 python scripts/search_dense_milvus.py \
@@ -55,17 +41,18 @@ python scripts/search_dense_milvus.py \
   --uri data/milvus/medical_rag.db
 ```
 
-## 第三步：验证 Metadata Filter
+再验证 metadata filter：
 
 ```bash
 python scripts/search_dense_milvus.py \
   data/processed/hypertension_2024/chunks.json \
-  --query "高血压分级" \
+  --query "2级高血压的收缩压和舒张压范围是多少？" \
   --content-type table \
-  --top-k 5
+  --top-k 5 \
+  --uri data/milvus/medical_rag.db
 ```
 
-## 第四步：与 Local Dense 对比
+最后做 backend consistency：
 
 ```bash
 python scripts/compare_dense_backends.py \
@@ -74,30 +61,3 @@ python scripts/compare_dense_backends.py \
   --top-k 10 \
   --uri data/milvus/medical_rag.db
 ```
-
-重点看：
-
-```text
-overlap_ratio
-same_rank_ratio
-first_rank_mismatch
-```
-
-详细原理：
-
-```text
-doc/MILVUS_V1.md
-doc/MILVUS_V1_CHANGELOG.md
-```
-
-## 数据安全
-
-默认 ingestion 只执行 `upsert`，不会删除 Collection。
-
-只有显式加入：
-
-```text
---recreate
-```
-
-才会 drop Collection。日常运行不要使用该参数。

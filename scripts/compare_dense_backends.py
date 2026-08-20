@@ -102,6 +102,9 @@ def main() -> None:
         manifest=manifest,
     )
 
+    # Make Milvus query-ready before LocalDenseIndex performs the first MPS forward pass.
+    milvus_index.ensure_loaded()
+
     local_response = local_index.search(args.query, embedder=embedder, top_k=args.top_k)
     milvus_response = milvus_index.search(args.query, embedder=embedder, top_k=args.top_k)
     comparison = compare_dense_rankings(local_response, milvus_response)

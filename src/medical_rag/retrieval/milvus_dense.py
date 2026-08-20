@@ -60,6 +60,23 @@ def _json_string_literal(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _load_state_is_loaded(state: Any) -> bool:
+    """Best-effort load-state check across recent pymilvus response shapes."""
+    if isinstance(state, dict):
+        state = state.get("state")
+    if state is None:
+        return False
+
+    name = getattr(state, "name", None)
+    if name is not None:
+        return str(name).strip().lower() == "loaded"
+
+    text = str(state).strip().lower()
+    if "notload" in text or "not_load" in text or "not loaded" in text:
+        return False
+    return text == "loaded" or text.endswith(".loaded") or "loadstate: loaded" in text
+
+
 def build_milvus_filter(
     *,
     document_id: str | None = None,
@@ -222,6 +239,29 @@ class MilvusDenseIndex:
             client = MilvusClient(**kwargs)
         self.client = client
 
+    def ensure_loaded(self) -> None:
+        """Make the collection query-ready before any query embedding forward pass.
+
+        Milvus persists collection data independently from query readiness. An
+        existing collection may therefore be released/NotLoad and must be loaded
+        before search. The ordering here is deliberate: in the observed macOS
+        ARM64 + PyTorch MPS + Milvus Lite runtime, calling ``load_collection``
+        after an MPS query forward pass could terminate Python in native code.
+        """
+        get_load_state = getattr(self.client, "get_load_state", None)
+        if callable(get_load_state):
+            state = get_load_state(collection_name=self.collection_name)
+            if _load_state_is_loaded(state):
+                return
+
+        load_collection = getattr(self.client, "load_collection", None)
+        if not callable(load_collection):
+            raise RuntimeError(
+                "Milvus client does not expose load_collection(); cannot make "
+                f"collection {self.collection_name!r} query-ready"
+            )
+        load_collection(collection_name=self.collection_name)
+
     def ensure_collection(self, *, recreate: bool = False) -> bool:
         """Ensure the collection exists.
 
@@ -357,6 +397,9 @@ class MilvusDenseIndex:
                 f"{embedder.dimension} != {self.manifest.dimension}"
             )
 
+        # Ensure Milvus is loaded before the first query forward pass.
+        self.ensure_loaded()
+
         query_vector = np.asarray(embedder.encode_query(query), dtype=np.float32)
         if query_vector.shape != (self.manifest.dimension,):
             raise ValueError(
@@ -369,10 +412,6 @@ class MilvusDenseIndex:
             if norm <= 0:
                 raise ValueError("query vector has zero norm")
             query_vector = query_vector / norm
-
-        load_collection = getattr(self.client, "load_collection", None)
-        if callable(load_collection):
-            load_collection(collection_name=self.collection_name)
 
         kwargs: dict[str, Any] = {
             "collection_name": self.collection_name,

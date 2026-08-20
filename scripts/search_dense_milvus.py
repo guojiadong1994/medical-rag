@@ -96,6 +96,9 @@ def main() -> None:
         collection_name=args.collection,
         manifest=manifest,
     )
+    # Model initialization happens before gRPC/Milvus loading, while the actual
+    # MPS query forward pass happens only after the collection is Loaded.
+    index.ensure_loaded()
     response = index.search(
         args.query,
         embedder=embedder,

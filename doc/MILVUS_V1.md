@@ -306,3 +306,27 @@ Embedding
 ### Q5：为什么 ingestion 用 upsert？
 
 因为 `chunk_id` 是稳定主键，重复执行 ingestion 时应该更新相同 Entity，而不是产生重复数据。这样更接近可重复、可恢复的工程数据流水线。
+
+## 12. V1.1：macOS ARM64 + MPS 的 Collection 生命周期修复
+
+真实联调表明，BGE-M3/MPS、Milvus Lite 数据文件、500 条 Entity 和 COSINE
+search 各自都正常。原 V1 的 native crash 出现在 Query 已经完成 MPS forward
+之后，再去执行 Milvus `load_collection()` 的运行时顺序。
+
+V1.1 统一改为：
+
+```text
+BGE-M3 模型初始化
+-> MilvusClient
+-> get_load_state
+-> 必要时 load_collection
+-> MPS encode_query
+-> Milvus search
+```
+
+`ensure_loaded()` 会先读取 load state；已经 Loaded 时不会重复 load。这样既满足
+Milvus 的查询生命周期要求，也避免在 MPS forward 之后再触发底层 Collection
+加载路径。
+
+注意：这个修复改变的是 **Resource Lifecycle Management**，不是 Embedding、
+相似度算法或 Collection 数据，因此无需重新 Parse / Chunk / Embedding / Ingest。
