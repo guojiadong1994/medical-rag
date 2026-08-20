@@ -160,11 +160,14 @@ def run(
             1 for chunk in narrative if chunk.page_start != chunk.page_end
         ),
         "config": {
+            "strategy_version": "stable_v1",
+            "strategy_note": "V1.1 retrieval granularity + V1.2 strict section safety; no aggressive short-chunk merge",
             "target_chars": target_chars,
             "max_chars": max_chars,
             "min_chars": min_chars,
             "overlap_chars": overlap_chars,
             "max_chars_scope": "narrative only; tables are intentionally kept intact in V1",
+            "short_chunk_policy": "preserve meaningful short chunks; drop only obvious layout noise",
         },
     }
     _write_json(report_path, report)

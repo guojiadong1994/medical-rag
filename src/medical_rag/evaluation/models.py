@@ -53,7 +53,10 @@ class RetrievalEvalCaseResult(BaseModel):
 
 class RetrievalEvalReport(BaseModel):
     suite_name: str
-    model_name: str
+    # Backward compatible defaults allow V1.1/V1.2 reports to still be loaded by the
+    # error-analysis script.
+    retriever_name: str = "dense"
+    model_name: str = ""
     query_count: int
     top_k: int
     recall_at_1: float

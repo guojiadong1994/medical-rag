@@ -36,7 +36,7 @@ class _SectionState:
 
 
 class StructureAwareChunker:
-    """Structure-aware V1.2 chunker for cleaned medical documents.
+    """Stable structure-aware chunker for cleaned medical documents.
 
     Strategy:
     - rebuild paragraph-like units from PDF visual-line blocks;
@@ -46,7 +46,13 @@ class StructureAwareChunker:
     - build overlap from complete semantic tails instead of raw character slicing;
     - allow chunks to cross page boundaries while preserving page_start/page_end;
     - keep each ordinary table as an independent table chunk;
-    - provide an ``embedding_text`` field with section context prepended.
+    - provide an ``embedding_text`` field with section context prepended;
+    - drop only obvious one-token extraction noise; do not aggressively merge short chunks.
+
+    This stable version intentionally keeps the finer V1.1 retrieval granularity while
+    retaining the safer V1.2 section rules. Short chunks are not merged merely to make
+    the document look cleaner, because our retrieval A/B test showed that aggressive
+    merging diluted dense-retrieval semantics.
     """
 
     _SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?；;])")
@@ -187,12 +193,17 @@ class StructureAwareChunker:
 
         flush_buffer()
 
-        # V1.2 removes obvious one-character extraction noise and merges adjacent
-        # undersized narrative chunks only when they share the same section and the
-        # merged text still respects the narrative hard limit. Table chunks remain
-        # intact because preserving row/column context is more important than the
-        # narrative max_chars setting.
-        chunks = self._postprocess_chunks(chunks)
+        # Safety-only post processing: remove obvious extraction artifacts but preserve
+        # V1.1-like retrieval granularity. In V1.2, aggressively merging all short
+        # chunks reduced Recall@3/Recall@5, so stable chunking deliberately avoids that.
+        chunks = [
+            chunk
+            for chunk in chunks
+            if not (
+                chunk.content_type == "narrative"
+                and self._is_obvious_noise(chunk.text)
+            )
+        ]
 
         # Reassign deterministic sequential IDs after all chunks are assembled.
         chunks = [
@@ -423,112 +434,15 @@ class StructureAwareChunker:
             pieces.append(remaining)
         return pieces
 
-    def _postprocess_chunks(self, chunks: list[DocumentChunk]) -> list[DocumentChunk]:
-        """Clean tiny extraction artifacts and merge safe short narrative chunks.
-
-        ``min_chars`` is a soft target, not a deletion threshold. A short chunk may be
-        medically meaningful, so V1.2 only drops a tiny explicit noise set and only
-        merges adjacent narrative chunks when section metadata matches exactly.
-        """
-
-        filtered = [
-            chunk
-            for chunk in chunks
-            if not (
-                chunk.content_type == "narrative"
-                and self._is_obvious_noise(chunk.text)
-            )
-        ]
-        if not filtered:
-            return []
-
-        # Forward pass: first try to merge a short chunk into the next chunk. This helps
-        # the first chunk of a section without crossing a section/table boundary.
-        forward: list[DocumentChunk] = []
-        idx = 0
-        while idx < len(filtered):
-            current = filtered[idx]
-            if (
-                current.content_type == "narrative"
-                and current.char_count < self.min_chars
-                and idx + 1 < len(filtered)
-            ):
-                nxt = filtered[idx + 1]
-                if self._can_merge_narrative(current, nxt):
-                    forward.append(self._merge_narrative_chunks(current, nxt))
-                    idx += 2
-                    continue
-            forward.append(current)
-            idx += 1
-
-        # Backward-safe pass: merge any remaining short chunk into its immediate
-        # previous narrative sibling when possible.
-        result: list[DocumentChunk] = []
-        for current in forward:
-            if (
-                current.content_type == "narrative"
-                and current.char_count < self.min_chars
-                and result
-                and self._can_merge_narrative(result[-1], current)
-            ):
-                result[-1] = self._merge_narrative_chunks(result[-1], current)
-            else:
-                result.append(current)
-        return result
-
-    def _can_merge_narrative(self, left: DocumentChunk, right: DocumentChunk) -> bool:
-        if left.content_type != "narrative" or right.content_type != "narrative":
-            return False
-        if left.section_path != right.section_path or left.section != right.section:
-            return False
-        if right.page_start > left.page_end + 1:
-            return False
-        merged_text = self._merge_text_without_duplicate_overlap(left.text, right.text)
-        return len(merged_text) <= self.max_chars
-
-    def _merge_narrative_chunks(
-        self,
-        left: DocumentChunk,
-        right: DocumentChunk,
-    ) -> DocumentChunk:
-        text = self._merge_text_without_duplicate_overlap(left.text, right.text)
-        section_path = list(left.section_path)
-        return left.model_copy(
-            update={
-                "page_start": min(left.page_start, right.page_start),
-                "page_end": max(left.page_end, right.page_end),
-                "text": text,
-                "embedding_text": self._embedding_text(section_path, text),
-                "char_count": len(text),
-            }
-        )
-
-    @staticmethod
-    def _merge_text_without_duplicate_overlap(left: str, right: str) -> str:
-        left = left.strip()
-        right = right.strip()
-        if not left:
-            return right
-        if not right:
-            return left
-
-        # Chunk overlap is exact text copied from the semantic tail. Remove the longest
-        # exact duplicated prefix/suffix before joining two chunks back together.
-        max_overlap = min(len(left), len(right), 300)
-        overlap = 0
-        for size in range(max_overlap, 19, -1):
-            if left[-size:] == right[:size]:
-                overlap = size
-                break
-        right_tail = right[overlap:].lstrip()
-        if not right_tail:
-            return left
-        if left.endswith(("\n", " ")):
-            return left + right_tail
-        return left + "\n\n" + right_tail
 
     @staticmethod
     def _is_obvious_noise(text: str) -> bool:
+        """Return True only for tiny standalone layout artifacts.
+
+        ``min_chars`` remains a soft size target. We do not delete short medical
+        statements merely because they are short. This filter is intentionally narrow.
+        """
+
         value = re.sub(r"[\s\-—_=：:·•.,，。;；()（）]+", "", text or "")
         return value in {"", "表", "图", "注", "页"}
 
