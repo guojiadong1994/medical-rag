@@ -229,7 +229,7 @@ class StructureAwareChunker:
     ) -> list[tuple[str, TextBlock | TableBlock]]:
         """Interleave tables and paragraph-like narrative units in reading order."""
 
-        raw = self._page_elements(blocks, tables)
+        raw = self._page_elements(blocks, tables, page_width)
         result: list[tuple[str, TextBlock | TableBlock]] = []
         text_run: list[TextBlock] = []
 
@@ -255,24 +255,81 @@ class StructureAwareChunker:
         self,
         blocks: list[TextBlock],
         tables: list[TableBlock],
+        page_width: float,
     ) -> list[tuple[str, TextBlock | TableBlock]]:
-        """Merge narrative blocks and tables into an approximate page reading order."""
+        """Merge narrative blocks and tables in column-aware reading order.
+
+        A table's detected bbox is not always a trustworthy reading-order anchor for
+        borderless two-column PDFs: a virtual table can become wider than the real
+        table.  ``caption_bbox`` is therefore preferred, and insertion is performed
+        relative to text blocks in the *same column*.  This prevents a right-column
+        table from inheriting the last section seen in the left column.
+        """
 
         ordered_blocks = sorted(blocks, key=lambda block: block.reading_order)
         elements: list[tuple[str, TextBlock | TableBlock]] = [
             ("text", block) for block in ordered_blocks
         ]
 
-        for table in sorted(tables, key=lambda item: (item.bbox[1], item.bbox[0])):
-            insert_at = len(elements)
+        def side(bbox: tuple[float, float, float, float]) -> str:
+            width = bbox[2] - bbox[0]
+            midpoint = page_width * 0.5
+            if width >= page_width * 0.58 or (bbox[0] < midpoint < bbox[2]):
+                return "wide"
+            center = (bbox[0] + bbox[2]) / 2
+            return "left" if center < midpoint else "right"
+
+        def text_side(element: TextBlock) -> str:
+            return side(element.bbox)
+
+        def fallback_insert(anchor: tuple[float, float, float, float]) -> int:
             for idx, (_, element) in enumerate(elements):
-                if not isinstance(element, TextBlock):
-                    continue
-                if element.bbox[1] > table.bbox[1]:
+                if isinstance(element, TextBlock) and element.bbox[1] > anchor[1]:
+                    return idx
+            return len(elements)
+
+        sorted_tables = sorted(
+            tables,
+            key=lambda item: (
+                (item.caption_bbox or item.bbox)[1],
+                (item.caption_bbox or item.bbox)[0],
+            ),
+        )
+        for table in sorted_tables:
+            anchor = table.caption_bbox or table.bbox
+            table_side = side(anchor)
+
+            if table_side == "wide":
+                insert_at = fallback_insert(anchor)
+                elements.insert(insert_at, ("table", table))
+                continue
+
+            same_side_indices = [
+                idx
+                for idx, (_, element) in enumerate(elements)
+                if isinstance(element, TextBlock) and text_side(element) == table_side
+            ]
+            if not same_side_indices:
+                elements.insert(fallback_insert(anchor), ("table", table))
+                continue
+
+            insert_at: int | None = None
+            for idx in same_side_indices:
+                element = elements[idx][1]
+                assert isinstance(element, TextBlock)
+                if element.bbox[1] > anchor[1]:
                     insert_at = idx
                     break
+
+            if insert_at is None:
+                # Put the table immediately after the final text block in its column,
+                # which still keeps it before the next column in two-column reading
+                # order.
+                insert_at = same_side_indices[-1] + 1
             elements.insert(insert_at, ("table", table))
+
         return elements
+
 
     def _pack_segments(self, segments: list[_Segment]) -> list[list[_Segment]]:
         if not segments:

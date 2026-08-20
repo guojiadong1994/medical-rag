@@ -26,7 +26,18 @@ def _render_tables_preview(cleaned: object) -> str:
                     [
                         f"## PAGE {page.page} · {title}",
                         "",
+                        f"- strategy: `{table.extraction_strategy}`",
+                        f"- quality_flags: `{', '.join(table.quality_flags) or 'none'}`",
+                        f"- bbox: `{table.bbox}`",
+                        f"- caption_bbox: `{table.caption_bbox}`",
+                        "",
+                        "### Structured table",
+                        "",
                         table.markdown,
+                        "",
+                        "### Raw text fallback",
+                        "",
+                        table.raw_text or "(empty)",
                         "",
                         "### Search text",
                         "",
@@ -53,6 +64,12 @@ async def run(input_pdf: Path, output_dir: Path) -> None:
     cleaned_blocks = sum(len(page.blocks) for page in cleaned.pages)
     table_count = sum(len(page.tables) for page in cleaned.pages)
     table_pages = [page.page for page in cleaned.pages if page.tables]
+    all_tables = [table for page in cleaned.pages for table in page.tables]
+    table_strategy_counts: dict[str, int] = {}
+    for table in all_tables:
+        table_strategy_counts[table.extraction_strategy] = (
+            table_strategy_counts.get(table.extraction_strategy, 0) + 1
+        )
 
     report = {
         "file_name": parsed.file_name,
@@ -68,6 +85,11 @@ async def run(input_pdf: Path, output_dir: Path) -> None:
         "ocr_recommended_pages": parsed.ocr_recommended_pages,
         "table_count": table_count,
         "table_pages": table_pages,
+        "table_strategy_counts": table_strategy_counts,
+        "column_clipped_table_count": sum(
+            "column_clipped" in table.quality_flags for table in all_tables
+        ),
+        "raw_text_fallback_table_count": sum(bool(table.raw_text) for table in all_tables),
         "repeated_noise_patterns": cleaned.repeated_noise_patterns,
     }
     _write_json(output_dir / "parse_report.json", report)
@@ -83,6 +105,22 @@ async def run(input_pdf: Path, output_dir: Path) -> None:
         for table in page.tables
     ]
     _write_json(output_dir / "tables.json", tables_payload)
+    _write_json(
+        output_dir / "table_quality_report.json",
+        [
+            {
+                "page": table.page,
+                "table_no": table.table_no,
+                "title": table.title,
+                "bbox": table.bbox,
+                "caption_bbox": table.caption_bbox,
+                "extraction_strategy": table.extraction_strategy,
+                "quality_flags": table.quality_flags,
+                "raw_text_chars": len(table.raw_text),
+            }
+            for table in all_tables
+        ],
+    )
     (output_dir / "tables_preview.md").write_text(
         _render_tables_preview(cleaned),
         encoding="utf-8",

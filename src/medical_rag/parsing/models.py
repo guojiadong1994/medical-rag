@@ -23,10 +23,23 @@ class TableBlock(BaseModel):
     table_no: int
     bbox: tuple[float, float, float, float]
     title: str | None = None
+    # ``caption_bbox`` is the layout anchor used by the chunker.  A borderless table
+    # detector can produce a bbox that is wider / higher than the actual table when a
+    # two-column PDF contains narrative text at the same vertical position.  The
+    # caption position is much more stable for deciding *where* the table belongs in
+    # reading order and therefore which section metadata it should inherit.
+    caption_bbox: tuple[float, float, float, float] | None = None
     headers: list[str] = Field(default_factory=list)
     rows: list[list[str]] = Field(default_factory=list)
     markdown: str = ""
+    # ``raw_text`` is a layout-aware fallback representation reconstructed directly
+    # from the PDF text layer inside the table region.  It is intentionally preserved
+    # in addition to structured rows because borderless tables may split a numeric
+    # value across virtual cells even though the original text layer is correct.
+    raw_text: str = ""
     search_text: str = ""
+    extraction_strategy: Literal["lines_strict", "caption_text"] = "lines_strict"
+    quality_flags: list[str] = Field(default_factory=list)
     source: Literal["text_layer", "ocr"] = "text_layer"
 
 

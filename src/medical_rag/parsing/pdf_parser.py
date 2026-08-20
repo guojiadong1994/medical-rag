@@ -145,10 +145,14 @@ class PdfParser:
     ) -> list[TableBlock]:
         """Extract tables with a high-precision pass plus a caption-guided fallback.
 
-        1. ``lines_strict`` handles ordinary ruled tables with low false positives.
-        2. If a caption like ``表6`` has no nearby detected table, a localized ``text``
-           strategy is used beneath that caption. This is important for borderless
-           medical-guideline tables while avoiding a full-page text-table scan.
+        Two details matter for medical two-column PDFs:
+
+        1. A caption-guided ``text`` scan is clipped to the *caption column* whenever
+           the opposite column contains narrative text at the same vertical band.
+           This prevents a right-column table from swallowing left-column prose.
+        2. Every table preserves the caption bbox and a raw text-layer fallback.  The
+           caption bbox is later used as the reading-order anchor, while raw text keeps
+           exact numbers available even if virtual table cells split a value.
         """
 
         extracted: list[TableBlock] = []
@@ -156,7 +160,14 @@ class PdfParser:
         try:
             finder = page.find_tables(strategy="lines_strict")
             for table in finder.tables:
-                block = self._table_to_block(table, page_number, len(extracted), text_blocks)
+                block = self._table_to_block(
+                    table,
+                    page_number,
+                    len(extracted),
+                    text_blocks,
+                    page=page,
+                    extraction_strategy="lines_strict",
+                )
                 if block is not None and not self._is_duplicate_table(block, extracted):
                     extracted.append(block)
         except Exception:
@@ -169,7 +180,15 @@ class PdfParser:
 
         for caption in caption_blocks:
             caption = self._tighten_caption_block(page, caption)
-            if self._caption_already_has_table(caption, extracted):
+            nearby_index = self._nearby_table_index(caption, extracted)
+            if nearby_index is not None:
+                existing = extracted[nearby_index]
+                extracted[nearby_index] = existing.model_copy(
+                    update={
+                        "title": self._clean_cell(caption.text),
+                        "caption_bbox": caption.bbox,
+                    }
+                )
                 continue
 
             clip = self._table_clip_below_caption(page, caption, text_blocks)
@@ -188,7 +207,16 @@ class PdfParser:
 
             candidates: list[TableBlock] = []
             for table in finder.tables:
-                block = self._table_to_block(table, page_number, len(extracted), text_blocks)
+                block = self._table_to_block(
+                    table,
+                    page_number,
+                    len(extracted),
+                    text_blocks,
+                    page=page,
+                    extraction_strategy="caption_text",
+                    source_clip=clip,
+                    caption=caption,
+                )
                 if block is None:
                     continue
                 if block.bbox[1] + 3 < caption.bbox[3]:
@@ -200,17 +228,22 @@ class PdfParser:
 
             # Prefer the first plausible table directly below the caption.
             candidates.sort(key=lambda item: (item.bbox[1], -(item.bbox[2] - item.bbox[0])))
-            candidate = candidates[0]
-            candidate = candidate.model_copy(
+            candidate = candidates[0].model_copy(
                 update={
                     "table_no": len(extracted),
                     "title": self._clean_cell(caption.text),
+                    "caption_bbox": caption.bbox,
                 }
             )
             if not self._is_duplicate_table(candidate, extracted):
                 extracted.append(candidate)
 
-        extracted.sort(key=lambda table: (table.bbox[1], table.bbox[0]))
+        extracted.sort(
+            key=lambda table: (
+                (table.caption_bbox or table.bbox)[1],
+                (table.caption_bbox or table.bbox)[0],
+            )
+        )
         return [table.model_copy(update={"table_no": i}) for i, table in enumerate(extracted)]
 
 
@@ -241,6 +274,11 @@ class PdfParser:
         page_number: int,
         table_no: int,
         text_blocks: list[TextBlock],
+        *,
+        page: pymupdf.Page,
+        extraction_strategy: str,
+        source_clip: pymupdf.Rect | None = None,
+        caption: TextBlock | None = None,
     ) -> TableBlock | None:
         try:
             bbox = tuple(round(float(v), 2) for v in table.bbox)  # type: ignore[attr-defined]
@@ -286,20 +324,53 @@ class PdfParser:
         if non_empty_cells < 4 or non_empty_cells / total_cells < 0.35:
             return None
 
-        title = self._find_table_title(text_blocks, bbox)
+        title_block = caption or self._find_table_title_block(text_blocks, bbox)
+        title = (
+            self._clean_cell(title_block.text.splitlines()[0])
+            if title_block is not None
+            else None
+        )
+        caption_bbox = title_block.bbox if title_block is not None else None
+
+        table_rect = pymupdf.Rect(*bbox)
+        raw_rect = table_rect
+        if source_clip is not None:
+            # Keep raw-text recovery inside the same caption column used for table
+            # detection.  This is the key defence against cross-column contamination.
+            raw_rect = table_rect & source_clip
+            if raw_rect.is_empty:
+                raw_rect = source_clip
+        raw_text = self._extract_raw_table_text(page, raw_rect)
+        if title:
+            raw_text = self._remove_caption_line(raw_text, title)
+
+        quality_flags: list[str] = []
+        strategy = "caption_text" if extraction_strategy == "caption_text" else "lines_strict"
+        if strategy == "caption_text":
+            quality_flags.append("caption_guided_text_detection")
+            if source_clip is not None and source_clip.width < page.rect.width * 0.8:
+                quality_flags.append("column_clipped")
+        if raw_text:
+            quality_flags.append("raw_text_fallback")
+
         markdown = self._table_to_markdown(headers, data_rows)
-        search_text = self._table_to_search_text(title, headers, data_rows)
+        search_text = self._table_to_search_text(title, headers, data_rows, raw_text)
 
         return TableBlock(
             page=page_number,
             table_no=table_no,
             bbox=bbox,  # type: ignore[arg-type]
             title=title,
+            caption_bbox=caption_bbox,
             headers=headers,
             rows=data_rows,
             markdown=markdown,
+            raw_text=raw_text,
             search_text=search_text,
+            extraction_strategy=strategy,
+            quality_flags=quality_flags,
         )
+
 
     def _table_clip_below_caption(
         self,
@@ -309,9 +380,12 @@ class PdfParser:
     ) -> pymupdf.Rect:
         start_y = min(page.rect.height, caption.bbox[3] + 1.0)
         bottom_y = min(page.rect.height * 0.94, start_y + page.rect.height * 0.48)
+        x0, x1 = self._caption_column_bounds(page, caption, blocks)
 
         for block in sorted(blocks, key=lambda item: item.bbox[1]):
             if block.bbox[1] <= start_y + 10:
+                continue
+            if not self._bbox_center_in_x_range(block.bbox, x0, x1):
                 continue
             text = block.text.strip()
             is_boundary = (
@@ -324,7 +398,124 @@ class PdfParser:
                 bottom_y = min(bottom_y, max(start_y + 20, block.bbox[1] - 2))
                 break
 
-        return pymupdf.Rect(0, start_y, page.rect.width, bottom_y)
+        return pymupdf.Rect(x0, start_y, x1, bottom_y)
+
+    def _caption_column_bounds(
+        self,
+        page: pymupdf.Page,
+        caption: TextBlock,
+        blocks: list[TextBlock],
+    ) -> tuple[float, float]:
+        """Return a safe horizontal clip for a caption-guided borderless table.
+
+        Full-page ``strategy='text'`` is dangerous on two-column journals: prose from
+        the opposite column can be interpreted as extra table cells.  We therefore
+        clip to the caption column only when the page actually contains opposite-column
+        text in the same vertical neighbourhood.  Otherwise the full page width is
+        kept, so genuine full-width tables remain possible.
+        """
+
+        page_width = float(page.rect.width)
+        caption_width = caption.bbox[2] - caption.bbox[0]
+        midpoint = page_width * 0.5
+        caption_center = (caption.bbox[0] + caption.bbox[2]) / 2
+
+        if caption_width >= page_width * 0.52 or (caption.bbox[0] < midpoint < caption.bbox[2]):
+            return 0.0, page_width
+
+        side = "left" if caption_center < midpoint else "right"
+        band_top = max(0.0, caption.bbox[1] - 70.0)
+        band_bottom = min(float(page.rect.height), caption.bbox[3] + page.rect.height * 0.34)
+        opposite_exists = False
+        for block in blocks:
+            if block is caption:
+                continue
+            center_y = (block.bbox[1] + block.bbox[3]) / 2
+            if not (band_top <= center_y <= band_bottom):
+                continue
+            width = block.bbox[2] - block.bbox[0]
+            if width >= page_width * 0.58:
+                continue
+            block_center = (block.bbox[0] + block.bbox[2]) / 2
+            block_side = "left" if block_center < midpoint else "right"
+            if block_side != side:
+                opposite_exists = True
+                break
+
+        if not opposite_exists:
+            return 0.0, page_width
+
+        overlap = page_width * 0.025
+        if side == "left":
+            return 0.0, min(page_width, midpoint + overlap)
+        return max(0.0, midpoint - overlap), page_width
+
+    @staticmethod
+    def _bbox_center_in_x_range(
+        bbox: tuple[float, float, float, float],
+        x0: float,
+        x1: float,
+    ) -> bool:
+        center = (bbox[0] + bbox[2]) / 2
+        return x0 <= center <= x1
+
+    def _extract_raw_table_text(self, page: pymupdf.Page, clip: pymupdf.Rect) -> str:
+        """Reconstruct table text directly from positioned PDF words.
+
+        This is a *retrieval fallback*, not a replacement for structured rows.  It keeps
+        exact numeric tokens such as ``100~109`` available when virtual columns split
+        them across cells.
+        """
+
+        try:
+            words = page.get_text("words", clip=clip, sort=False)
+        except Exception:
+            return ""
+        words = [word for word in words if len(word) >= 5 and str(word[4]).strip()]
+        if not words:
+            return ""
+
+        heights = sorted(max(1.0, float(word[3]) - float(word[1])) for word in words)
+        line_tol = max(2.5, heights[len(heights) // 2] * 0.55)
+        ordered = sorted(words, key=lambda word: (((float(word[1]) + float(word[3])) / 2), float(word[0])))
+
+        lines: list[list[tuple]] = []
+        centers: list[float] = []
+        for word in ordered:
+            cy = (float(word[1]) + float(word[3])) / 2
+            target = None
+            for idx in range(len(lines) - 1, max(-1, len(lines) - 5), -1):
+                if abs(cy - centers[idx]) <= line_tol:
+                    target = idx
+                    break
+            if target is None:
+                lines.append([word])
+                centers.append(cy)
+            else:
+                lines[target].append(word)
+                count = len(lines[target])
+                centers[target] = ((centers[target] * (count - 1)) + cy) / count
+
+        rendered: list[str] = []
+        for line in sorted(zip(centers, lines), key=lambda item: item[0]):
+            items = sorted(line[1], key=lambda word: float(word[0]))
+            tokens = [self._clean_cell(word[4]) for word in items if self._clean_cell(word[4])]
+            if tokens:
+                rendered.append(" ".join(tokens))
+        return "\n".join(rendered).strip()
+
+    @staticmethod
+    def _remove_caption_line(raw_text: str, title: str) -> str:
+        if not raw_text:
+            return ""
+        title_key = re.sub(r"\s+", "", title)
+        lines = []
+        for line in raw_text.splitlines():
+            if re.sub(r"\s+", "", line) == title_key:
+                continue
+            lines.append(line)
+        return "\n".join(lines).strip()
+
 
     @staticmethod
     def _clean_cell(value: object) -> str:
@@ -346,11 +537,11 @@ class PdfParser:
         normalize = lambda row: [re.sub(r"\s+", "", cell) for cell in row]
         return normalize(left) == normalize(right)
 
-    def _find_table_title(
+    def _find_table_title_block(
         self,
         blocks: list[TextBlock],
         table_bbox: tuple[float, float, float, float],
-    ) -> str | None:
+    ) -> TextBlock | None:
         candidates: list[tuple[float, TextBlock]] = []
         table_y0 = table_bbox[1]
         for block in blocks:
@@ -364,7 +555,18 @@ class PdfParser:
         if not candidates:
             return None
         _, best = min(candidates, key=lambda item: item[0])
-        return self._clean_cell(best.text.splitlines()[0])
+        return best
+
+    def _find_table_title(
+        self,
+        blocks: list[TextBlock],
+        table_bbox: tuple[float, float, float, float],
+    ) -> str | None:
+        block = self._find_table_title_block(blocks, table_bbox)
+        if block is None:
+            return None
+        return self._clean_cell(block.text.splitlines()[0])
+
 
     @staticmethod
     def _table_to_markdown(headers: list[str], rows: list[list[str]]) -> str:
@@ -391,11 +593,13 @@ class PdfParser:
         title: str | None,
         headers: list[str],
         rows: list[list[str]],
+        raw_text: str = "",
     ) -> str:
         parts: list[str] = []
         if title:
             parts.append(title)
 
+        structured_lines: list[str] = []
         for row in rows:
             fields: list[str] = []
             for index, cell in enumerate(row):
@@ -404,8 +608,26 @@ class PdfParser:
                 header = headers[index] if index < len(headers) else ""
                 fields.append(f"{header}: {cell}" if header else cell)
             if fields:
-                parts.append("；".join(fields))
+                structured_lines.append("；".join(fields))
+        parts.extend(structured_lines)
+
+        # Dual representation: structured rows are best for relationships; raw layout
+        # text is best for preserving exact values if cell boundaries were imperfect.
+        if raw_text:
+            structured_key = re.sub(r"\s+", "", "".join(structured_lines))
+            raw_key = re.sub(r"\s+", "", raw_text)
+            if raw_key and raw_key not in structured_key:
+                parts.append("原始表格文本：\n" + raw_text)
         return "\n".join(parts)
+
+    @staticmethod
+    def _nearby_table_index(caption: TextBlock, tables: list[TableBlock]) -> int | None:
+        for index, table in enumerate(tables):
+            vertical_gap = table.bbox[1] - caption.bbox[3]
+            if -5 <= vertical_gap <= 120:
+                return index
+        return None
+
 
     @staticmethod
     def _caption_already_has_table(caption: TextBlock, tables: list[TableBlock]) -> bool:
