@@ -25,3 +25,11 @@
 ```text
 59 passed
 ```
+
+## V1.0.1 启动修复
+
+- 修复 `generation.client → rag.context → rag.__init__ → rag.pipeline → generation.client` 循环导入。
+- `rag` 包根入口对 Pipeline（完整问答处理流程）对象改为延迟导入。
+- `preflight_v1.py` 增加 API 导入冒烟检查，避免“预检查通过但服务无法启动”。
+- 增加循环导入回归测试。
+- 包版本更新为 `1.0.1`。
