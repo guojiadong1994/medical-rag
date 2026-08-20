@@ -58,3 +58,12 @@ python scripts/compare_dense_backends.py \
   --query "2级高血压的收缩压和舒张压范围是多少？" \
   --top-k 10
 ```
+
+## Context Builder V1
+
+```bash
+python scripts/build_rag_context.py data/processed/hypertension_2024/chunks.json \
+  --query "2级高血压的收缩压和舒张压范围是多少？" \
+  --context-top-k 5 \
+  --max-context-chars 6000
+```
